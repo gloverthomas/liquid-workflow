@@ -18,10 +18,21 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
 
 function sendJson(res: ServerResponse, status: number, body: unknown) {
   const payload = JSON.stringify(body, null, 2);
-  res.writeHead(status, {
+  const headers: Record<string, string | number | string[]> = {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
-  });
+  };
+  // Preserve CORS headers set earlier (writeHead replaces the header map).
+  for (const key of [
+    "access-control-allow-origin",
+    "access-control-allow-methods",
+    "access-control-allow-headers",
+    "vary",
+  ]) {
+    const value = res.getHeader(key);
+    if (value !== undefined) headers[key] = value as string | number | string[];
+  }
+  res.writeHead(status, headers);
   res.end(payload);
 }
 
@@ -47,8 +58,16 @@ function cors(res: ServerResponse, origin: string | undefined) {
     "http://localhost:3000",
     "http://127.0.0.1:3001",
     "http://localhost:3001",
+    "https://liquid-accounting.world",
+    "https://www.liquid-accounting.world",
+    "https://reporting.liquid-accounting.world",
   ]);
-  if (origin && allowed.has(origin)) {
+  const ok =
+    Boolean(origin) &&
+    (allowed.has(origin!) ||
+      origin!.endsWith(".liquid-accounting.world") ||
+      origin!.endsWith(".vercel.app"));
+  if (ok && origin) {
     res.setHeader("access-control-allow-origin", origin);
     res.setHeader("access-control-allow-methods", "POST, OPTIONS");
     res.setHeader("access-control-allow-headers", "content-type");
