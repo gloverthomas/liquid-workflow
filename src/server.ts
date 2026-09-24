@@ -43,11 +43,11 @@ function notFound(res: ServerResponse) {
 function parseIssue(body: Partial<TriggerIssue>): TriggerIssue {
   return {
     id: body.id ?? "manual",
-    identifier: (body.identifier ?? "LIQ-15").toUpperCase(),
+    identifier: (body.identifier ?? "LIQ-16").toUpperCase(),
     title:
       body.title ??
-      "[Hero] Create Invoice / Reports deep-link to missing #invoice-performance",
-    url: body.url ?? "https://linear.app/liquid-accounting/issue/LIQ-15",
+      "[Hero] Help centre works in Core but is dead in Reporting",
+    url: body.url ?? "https://linear.app/liquid-accounting/issue/LIQ-16",
     stateName: body.stateName ?? "In Progress",
   };
 }

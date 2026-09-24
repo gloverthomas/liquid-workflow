@@ -5,8 +5,9 @@ import { buildSpecialistAgents } from "./agents.js";
 import { config } from "./config.js";
 import { evaluateRun, latestEvalForIssue, type EvalReport } from "./eval/harness.js";
 import { describeRoster } from "./models.js";
-import { buildImplementPrompt, buildPlanPrompt, type TriggerIssue } from "./prompts/liq-9.js";
 import { buildLiq15ImplementPrompt, buildLiq15PlanPrompt, isLiq15 } from "./prompts/liq-15.js";
+import { buildLiq16ImplementPrompt, buildLiq16PlanPrompt, isLiq16 } from "./prompts/liq-16.js";
+import { buildImplementPrompt, buildPlanPrompt, type TriggerIssue } from "./prompts/liq-9.js";
 
 export type PlanRunRecord = {
   runId: string;
@@ -135,11 +136,21 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
       "",
       is15
         ? "Bounded fix: Core #invoice-performance → #revenue-summary (LIQ-15 only)"
-        : "Bounded fix: Core #sales-summary → #revenue-summary (LIQ-9 only)",
-      "Files: liquid-accounting-core/src/main.tsx, liquid-accounting-core/src/demoSignal.ts,",
-      "       liquid-accounting-reporting/src/main.tsx (miss copy only),",
-      "       liquid-accounting-core/e2e/cross-repo-parity.spec.ts",
-      "Out-of-scope: shared BFF, full shell extraction, status pills, new Invoice performance product.",
+        : issue.identifier.toUpperCase() === "LIQ-16"
+          ? "Bounded fix: Reporting Help centre parity with Core dropdown (LIQ-16 only)"
+          : "Bounded fix: Core #sales-summary → #revenue-summary (LIQ-9 only)",
+      issue.identifier.toUpperCase() === "LIQ-16"
+        ? "Files: liquid-accounting-reporting/src/main.tsx, styles; mirror Core help popover; e2e parity"
+        : "Files: liquid-accounting-core/src/main.tsx, liquid-accounting-core/src/demoSignal.ts,",
+      issue.identifier.toUpperCase() === "LIQ-16"
+        ? "Out-of-scope: shared design-system package, full shell extraction, BFF changes."
+        : "       liquid-accounting-reporting/src/main.tsx (miss copy only),",
+      issue.identifier.toUpperCase() === "LIQ-16"
+        ? ""
+        : "       liquid-accounting-core/e2e/cross-repo-parity.spec.ts",
+      issue.identifier.toUpperCase() === "LIQ-16"
+        ? ""
+        : "Out-of-scope: shared BFF, full shell extraction, status pills, new Invoice performance product.",
       "Security: PASS (dry-run synthetic). Quality: PASS (dry-run synthetic).",
       "Human write-gate: Await approval before implementing.",
       "",
@@ -177,7 +188,11 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const prompt = isLiq15(issue) ? buildLiq15PlanPrompt(issue, rosterBlock) : buildPlanPrompt(issue, rosterBlock);
+    const prompt = isLiq16(issue)
+      ? buildLiq16PlanPrompt(issue, rosterBlock)
+      : isLiq15(issue)
+        ? buildLiq15PlanPrompt(issue, rosterBlock)
+        : buildPlanPrompt(issue, rosterBlock);
     const run = await agent.send(prompt);
     const streamed = await collectAssistantText(run.stream());
     const waited = await run.wait();
@@ -308,9 +323,11 @@ export async function startImplementRun(issue: TriggerIssue): Promise<PlanRunRec
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const prompt = isLiq15(issue)
-      ? buildLiq15ImplementPrompt(issue, rosterBlock)
-      : buildImplementPrompt(issue, rosterBlock);
+    const prompt = isLiq16(issue)
+      ? buildLiq16ImplementPrompt(issue, rosterBlock)
+      : isLiq15(issue)
+        ? buildLiq15ImplementPrompt(issue, rosterBlock)
+        : buildImplementPrompt(issue, rosterBlock);
     const run = await agent.send(prompt);
     const streamed = await collectAssistantText(run.stream());
     const waited = await run.wait();

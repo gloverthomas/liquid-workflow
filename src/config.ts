@@ -64,7 +64,7 @@ export const config = {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
-  triggerIssueIds: (process.env.TRIGGER_ISSUE_IDS ?? "LIQ-15,LIQ-9")
+  triggerIssueIds: (process.env.TRIGGER_ISSUE_IDS ?? "LIQ-16,LIQ-15,LIQ-9")
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),

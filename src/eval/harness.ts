@@ -53,8 +53,23 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
   };
 
   if (record.kind === "plan" || record.status === "dry_run") {
-    const isLiq15 = record.issue.identifier.toUpperCase() === "LIQ-15";
-    if (isLiq15) {
+    const id = record.issue.identifier.toUpperCase();
+    const isLiq16 = id === "LIQ-16";
+    const isLiq15 = id === "LIQ-15";
+    if (isLiq16) {
+      requireMention(
+        "mentions-help-centre",
+        "Plan references Help centre shell parity",
+        ["help centre", "help-centre", "help menu", "help"],
+        true,
+      );
+      requireMention(
+        "mentions-core-and-reporting",
+        "Plan names Core and Reporting",
+        ["liquid-accounting-core", "liquid-accounting-reporting", "core", "reporting"],
+        true,
+      );
+    } else if (isLiq15) {
       requireMention(
         "mentions-invoice-performance",
         "Plan references #invoice-performance (broken hash)",
