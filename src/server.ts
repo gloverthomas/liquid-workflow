@@ -3,6 +3,8 @@ import { buildSpecialistAgents } from "./agents.js";
 import { config } from "./config.js";
 import { evaluateRun, latestEvalForIssue } from "./eval/harness.js";
 import { shouldTriggerFromWebhook, verifyLinearSignature, type LinearWebhookPayload } from "./linear-webhook.js";
+import { shouldCloseFromMerge, verifyGitHubSignature, type GitHubPullRequestPayload } from "./github-webhook.js";
+import { markIssueDone } from "./linear-done.js";
 import { notifyPlanComplete, notifySignalReceived, LINEAR_ISSUE_UUID } from "./notify.js";
 import { getRun, listRuns, startImplementRun, startPlanRun } from "./sdk-planner.js";
 import type { TriggerIssue } from "./prompts/liq-9.js";
@@ -270,6 +272,35 @@ const server = createServer(async (req, res) => {
 
       // Respond quickly then continue? For demo we await so the caller sees the plan.
       await handleTrigger(issue, res);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/webhooks/github") {
+      const rawBuffer = await readBody(req);
+      const raw = rawBuffer.toString("utf8");
+      const signature = req.headers["x-hub-signature-256"];
+      const signatureValue = Array.isArray(signature) ? signature[0] : signature;
+      if (!verifyGitHubSignature(raw, signatureValue)) {
+        sendJson(res, 401, { error: "invalid_signature" });
+        return;
+      }
+
+      const event = req.headers["x-github-event"];
+      const eventName = Array.isArray(event) ? event[0] : event;
+      if (eventName !== "pull_request") {
+        sendJson(res, 200, { ignored: true, reason: "not_pull_request" });
+        return;
+      }
+
+      const payload = JSON.parse(raw) as GitHubPullRequestPayload;
+      const close = shouldCloseFromMerge(payload);
+      if (!close) {
+        sendJson(res, 200, { ignored: true });
+        return;
+      }
+
+      const result = await markIssueDone(close);
+      sendJson(res, 200, { closed: true, ...result });
       return;
     }
 

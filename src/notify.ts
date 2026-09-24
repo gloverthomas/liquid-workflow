@@ -9,6 +9,107 @@ export const LINEAR_ISSUE_UUID: Record<string, string> = {
   "LIQ-16": "7d93e202-e7ee-4e14-8356-c4c6909d8ae9",
 };
 
+function issueLinearUrl(issue: TriggerIssue): string | undefined {
+  if (issue.url) return issue.url;
+  const id = LINEAR_ISSUE_UUID[issue.identifier.toUpperCase()];
+  return id ? `https://linear.app/liquid-accounting/issue/${issue.identifier}` : undefined;
+}
+
+/** Turn agent stream dumps into a short Slack-readable blurb. */
+export function summarizeForSlack(raw: string | undefined, maxChars = 520): string {
+  if (!raw?.trim()) return "No plan summary captured — open the agent link for the full write-up.";
+  const cleaned = raw
+    .replace(/\r\n/g, "\n")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
+  // Prefer denser paragraphs over single-token line wraps from the stream.
+  const lines = cleaned
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const rejoined: string[] = [];
+  for (const line of lines) {
+    const prev = rejoined[rejoined.length - 1];
+    // Stitch agent stream wraps like "V" + "ITE_WORKFLOW..." or "final" + "izing".
+    if (
+      prev &&
+      ((prev.length <= 4 && !/[.!?]$/.test(prev)) ||
+        (/[A-Za-z0-9_`/-]$/.test(prev) && /^[a-z0-9_`-]/.test(line) && line.length < 40))
+    ) {
+      rejoined[rejoined.length - 1] = `${prev}${line}`;
+    } else {
+      rejoined.push(line);
+    }
+  }
+
+  const collapsed = rejoined.join(" ").replace(/\s+/g, " ").replace(/`\s+/g, "`").replace(/\s+`/g, "`");
+
+  if (collapsed.length <= maxChars) return collapsed;
+  const cut = collapsed.slice(0, maxChars);
+  const lastStop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("; "), cut.lastIndexOf(" — "));
+  return `${(lastStop > 120 ? cut.slice(0, lastStop + 1) : cut).trim()}…`;
+}
+
+function slackMention(): string {
+  const id = config.slackMentionUserId?.trim();
+  return id ? `<@${id}> ` : "";
+}
+
+async function postSlack(payload: Record<string, unknown>): Promise<string> {
+  if (!config.slackWebhookUrl) return "skipped";
+  const response = await fetch(config.slackWebhookUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return response.ok ? "posted" : `failed:${response.status}`;
+}
+
+async function linearComment(issueId: string, body: string): Promise<string> {
+  if (!config.linearApiKey) return "skipped";
+  const response = await fetch("https://api.linear.app/graphql", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: config.linearApiKey,
+    },
+    body: JSON.stringify({
+      query: `
+        mutation CommentCreate($input: CommentCreateInput!) {
+          commentCreate(input: $input) { success comment { id url } }
+        }
+      `,
+      variables: { input: { issueId, body } },
+    }),
+  });
+  return response.ok ? "posted" : `failed:${response.status}`;
+}
+
+async function ensureAssignee(issueId: string): Promise<void> {
+  if (!config.linearApiKey || !config.linearAssigneeId) return;
+  await fetch("https://api.linear.app/graphql", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: config.linearApiKey,
+    },
+    body: JSON.stringify({
+      query: `
+        mutation IssueAssign($id: String!, $assigneeId: String!) {
+          issueUpdate(id: $id, input: { assigneeId: $assigneeId }) { success }
+        }
+      `,
+      variables: { id: issueId, assigneeId: config.linearAssigneeId },
+    }),
+  });
+}
+
 export async function notifySignalReceived(args: {
   issue: TriggerIssue;
   source?: string;
@@ -16,59 +117,72 @@ export async function notifySignalReceived(args: {
 }): Promise<{ slack?: string; linear?: string }> {
   const results: { slack?: string; linear?: string } = {};
   const linearId = LINEAR_ISSUE_UUID[args.issue.identifier.toUpperCase()];
+  const linearUrl = issueLinearUrl(args.issue);
+  const mention = slackMention();
 
   if (config.slackWebhookUrl) {
-    const response = await fetch(config.slackWebhookUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        text: [
-          `*Liquid product signal* — ${args.issue.identifier}`,
-          args.issue.title,
-          args.source ? `Source: \`${args.source}\`` : "",
-          args.hash ? `Seam: \`${args.hash}\`` : "",
-          "",
-          "Sentry/PostHog caught a shell-parity miss. Starting Cursor SDK plan (human write-gate still applies).",
-          args.issue.url ? `Linear: ${args.issue.url}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      }),
-    });
-    results.slack = response.ok ? "posted" : `failed:${response.status}`;
-  }
-
-  if (config.linearApiKey && linearId) {
-    const response = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: config.linearApiKey,
-      },
-      body: JSON.stringify({
-        query: `
-          mutation CommentCreate($input: CommentCreateInput!) {
-            commentCreate(input: $input) { success comment { id url } }
-          }
-        `,
-        variables: {
-          input: {
-            issueId: linearId,
-            body: [
-              "## Product signal received",
+    results.slack = await postSlack({
+      text: `${mention}Product signal on ${args.issue.identifier} — triage in Linear`,
+      blocks: [
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: `Signal · ${args.issue.identifier}`,
+            emoji: true,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: [
+              `${mention}*${args.issue.title}*`,
+              args.source ? `Source: \`${args.source}\`` : null,
+              args.hash ? `Seam: \`${args.hash}\`` : null,
               "",
-              `- Source: \`${args.source ?? "unknown"}\``,
-              args.hash ? `- Seam: \`${args.hash}\`` : "",
-              "",
-              "Workflow is starting the Cursor SDK plan. Awaiting human approval before `/implement`.",
+              "Sentry/PostHog caught a shell-parity miss. Ticket is assigned for triage.",
+              "*Next:* open Linear → move to *In Progress* to start the Cursor SDK plan.",
             ]
               .filter(Boolean)
               .join("\n"),
           },
         },
-      }),
+        ...(linearUrl
+          ? [
+              {
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    text: { type: "plain_text", text: "Open in Linear", emoji: true },
+                    url: linearUrl,
+                    style: "primary",
+                  },
+                ],
+              },
+            ]
+          : []),
+      ],
     });
-    results.linear = response.ok ? "posted" : `failed:${response.status}`;
+  }
+
+  if (linearId) {
+    await ensureAssignee(linearId);
+    results.linear = await linearComment(
+      linearId,
+      [
+        "## Product signal received",
+        "",
+        `- Source: \`${args.source ?? "unknown"}\``,
+        args.hash ? `- Seam: \`${args.hash}\`` : "",
+        "",
+        "Assigned for triage. Move this issue to **In Progress** to start the Cursor SDK plan.",
+        "Do not treat this comment as approval to open a PR.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
   }
 
   return results;
@@ -76,105 +190,118 @@ export async function notifySignalReceived(args: {
 
 export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack?: string; linear?: string }> {
   const results: { slack?: string; linear?: string } = {};
-  const summaryPreview = (record.summary ?? record.error ?? "").slice(0, 2800);
-  const kindLabel = record.kind === "implement" ? "implement" : "plan";
-  const prBlock =
-    record.prUrls && record.prUrls.length > 0
-      ? ["", "*Pull requests*", ...record.prUrls.map((u) => `• ${u}`)].join("\n")
-      : "";
-  const previewBlock =
-    record.previewUrls && record.previewUrls.length > 0
-      ? ["", "*Preview sandboxes*", ...record.previewUrls.map((u) => `• ${u}`)].join("\n")
-      : "";
-  const agentBlock = record.agentUrl
-    ? `\nAgent: ${record.agentUrl}`
-    : record.agentId
-      ? `\nAgent: \`${record.agentId}\``
-      : "\nAgent: (dry-run)";
+  const kindLabel = record.kind === "implement" ? "Implement" : "Plan";
+  const blurb = summarizeForSlack(record.summary ?? record.error);
+  const evalPassed = record.eval?.passed;
+  const evalLine =
+    record.kind === "plan" && typeof evalPassed === "boolean"
+      ? evalPassed
+        ? "Eval gate: *passed*"
+        : "Eval gate: *failed* — re-run plan before implement"
+      : null;
   const linearId =
     LINEAR_ISSUE_UUID[record.issue.identifier.toUpperCase()] ??
     (record.issue.id && record.issue.id !== "manual" && record.issue.id !== "signal"
       ? record.issue.id
       : undefined);
+  const linearUrl = issueLinearUrl(record.issue);
+  const mention = slackMention();
 
-  if (config.slackWebhookUrl) {
-    const body = {
-      text: [
-        `*Liquid SDK ${kindLabel} ${record.status}* — ${record.issue.identifier}`,
-        record.issue.title,
-        agentBlock.trim(),
-        `Run: \`${record.runId}\``,
-        prBlock,
-        previewBlock,
-        "",
-        "```",
-        summaryPreview || "(no summary)",
-        "```",
-        "",
-        record.kind === "implement"
-          ? "Human write-gate: review PR + BugBot/CI + preview, then merge. Agents never push prod."
-          : "Human write-gate: review plan, then POST /implement (or approve in chat) before PR.",
-      ]
-        .filter((line) => line !== undefined)
-        .join("\n"),
-    };
-    const response = await fetch(config.slackWebhookUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+  const nextStep =
+    record.kind === "implement"
+      ? "*Next:* review PR + BugBot/CI + preview, then *you* merge. Agents never push prod."
+      : evalPassed === false
+        ? "*Next:* open the agent plan, fix gaps, move Linear back through *In Progress* to re-plan."
+        : "*Next:* review the plan, then say *implement* / *approve* in the agent chat (or approve in Slack once wired). Agents open PRs only — humans merge and ship prod.";
+
+  const actionElements: Array<Record<string, unknown>> = [];
+  if (record.agentUrl) {
+    actionElements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Review agent plan", emoji: true },
+      url: record.agentUrl,
+      style: "primary",
     });
-    results.slack = response.ok ? "posted" : `failed:${response.status}`;
+  }
+  if (linearUrl) {
+    actionElements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Open Linear", emoji: true },
+      url: linearUrl,
+    });
+  }
+  for (const pr of record.prUrls ?? []) {
+    actionElements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Open PR", emoji: true },
+      url: pr,
+    });
+  }
+  for (const preview of record.previewUrls ?? []) {
+    actionElements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Open preview", emoji: true },
+      url: preview,
+    });
   }
 
-  if (config.linearApiKey && linearId) {
-    const response = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: config.linearApiKey,
-      },
-      body: JSON.stringify({
-        query: `
-          mutation CommentCreate($input: CommentCreateInput!) {
-            commentCreate(input: $input) {
-              success
-              comment { id url }
-            }
-          }
-        `,
-        variables: {
-          input: {
-            issueId: linearId,
-            body: [
-              `## Cursor SDK ${kindLabel} (${record.status})`,
-              "",
-              record.agentUrl
-                ? `- Agent: ${record.agentUrl}`
-                : record.agentId
-                  ? `- Agent: \`${record.agentId}\``
-                  : "- Agent: dry-run",
-              `- Workflow run: \`${record.runId}\``,
-              record.artifactPath ? `- Artifact: \`${record.artifactPath}\`` : "",
-              ...(record.prUrls?.length ? ["", "### PRs", ...record.prUrls.map((u) => `- ${u}`)] : []),
-              ...(record.previewUrls?.length
-                ? ["", "### Previews", ...record.previewUrls.map((u) => `- ${u}`)]
-                : []),
-              "",
-              "```",
-              summaryPreview || "(no summary)",
-              "```",
-              "",
-              record.kind === "implement"
-                ? "Await human merge after BugBot + CI. Do not treat Slack ack as auto-deploy."
-                : "Await human approval before `/implement`.",
-            ]
-              .filter(Boolean)
-              .join("\n"),
+  if (config.slackWebhookUrl) {
+    results.slack = await postSlack({
+      text: `${mention}${kindLabel} ${record.status} — ${record.issue.identifier}`,
+      blocks: [
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: `${kindLabel} ${record.status} · ${record.issue.identifier}`,
+            emoji: true,
           },
         },
-      }),
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: [`${mention}*${record.issue.title}*`, evalLine, "", blurb].filter(Boolean).join("\n"),
+          },
+        },
+        ...(actionElements.length
+          ? [{ type: "actions", elements: actionElements.slice(0, 5) }]
+          : []),
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: [`Run \`${record.runId}\``, nextStep].join("\n"),
+            },
+          ],
+        },
+      ],
     });
-    results.linear = response.ok ? "posted" : `failed:${response.status}`;
+  }
+
+  if (linearId) {
+    results.linear = await linearComment(
+      linearId,
+      [
+        `## Cursor SDK ${kindLabel.toLowerCase()} (${record.status})`,
+        "",
+        record.agentUrl ? `- Agent: ${record.agentUrl}` : record.agentId ? `- Agent: \`${record.agentId}\`` : "- Agent: dry-run",
+        `- Workflow run: \`${record.runId}\``,
+        evalLine ? `- ${evalLine.replace(/\*/g, "**")}` : "",
+        ...(record.prUrls?.length ? ["", "### PRs", ...record.prUrls.map((u) => `- ${u}`)] : []),
+        ...(record.previewUrls?.length ? ["", "### Previews", ...record.previewUrls.map((u) => `- ${u}`)] : []),
+        "",
+        "### Summary",
+        blurb,
+        "",
+        record.kind === "implement"
+          ? "Await human merge after BugBot + CI. Slack is attention, not auto-deploy."
+          : "Await human approval before implement / PR. Prefer reviewing the agent link over this comment.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
   }
 
   return results;

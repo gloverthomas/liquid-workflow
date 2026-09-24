@@ -18,7 +18,8 @@ function loadDotEnv(fileName: string) {
     ) {
       value = value.slice(1, -1);
     }
-    if (process.env[key] === undefined) {
+    // Prefer .env.local over empty inherited env (common when shells export blank keys).
+    if (process.env[key] === undefined || process.env[key] === "") {
       process.env[key] = value;
     }
   }
@@ -59,7 +60,23 @@ export const config = {
   repoStartingRef: process.env.REPO_STARTING_REF?.trim() || "main",
   linearWebhookSecret: process.env.LINEAR_WEBHOOK_SECRET?.trim() || "",
   linearApiKey: process.env.LINEAR_API_KEY?.trim() || "",
+  /** When set, signal/plan notify assigns the curated Linear issue to this user id. */
+  linearAssigneeId: process.env.LINEAR_ASSIGNEE_ID?.trim() || "",
   slackWebhookUrl: process.env.SLACK_WEBHOOK_URL?.trim() || "",
+  /** Slack user id for <@U…> mentions on briefs (optional). */
+  slackMentionUserId: process.env.SLACK_MENTION_USER_ID?.trim() || "",
+  /** Optional fixed Done state id; otherwise resolved from the issue's team. */
+  linearDoneStateId: process.env.LINEAR_DONE_STATE_ID?.trim() || "",
+  /** GitHub webhook HMAC secret for /webhooks/github (optional in demo). */
+  githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET?.trim() || "",
+  /** Repos whose merges may close curated Linear hero tickets. */
+  githubMergeRepos: (
+    process.env.GITHUB_MERGE_REPOS ??
+    "gloverthomas/liquid-accounting-core,gloverthomas/liquid-accounting-reporting"
+  )
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
   triggerStates: (process.env.TRIGGER_STATES ?? "In Progress")
     .split(",")
     .map((s) => s.trim().toLowerCase())
