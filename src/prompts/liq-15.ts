@@ -1,4 +1,5 @@
 import type { TriggerIssue } from "./liq-9.js";
+import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "../guardrails.js";
 
 export function isLiq15(issue: TriggerIssue) {
   return issue.identifier.toUpperCase() === "LIQ-15";
@@ -39,7 +40,10 @@ Fix ONLY:
 4. Security + quality specialist findings.
 5. End with: "Await approval before implementing."
 
-Stay in plan mode.`;
+Stay in plan mode.
+
+${HUMAN_WRITE_GATE}
+If later approved to implement: PRs only — never merge or deploy.`;
 }
 
 export function buildLiq15ImplementPrompt(issue: TriggerIssue, rosterBlock: string): string {
@@ -57,7 +61,9 @@ Spawn **security-reviewer** and **quality-reviewer** on the diff before opening 
 1. Core: change \`#invoice-performance\` deep-links (Reports nav, dashboard task, Create Invoice continue target) to \`#revenue-summary\`.
 2. Reporting: no new report catalogue entry required; miss banner for unknown hashes may remain.
 3. Update e2e parity if needed.
-4. Open PRs (autoCreatePR). Do NOT merge. Do NOT build a shared BFF or Invoice performance product.
+4. Open PRs (autoCreatePR). Do NOT build a shared BFF or Invoice performance product.
 
-Human merges.`;
+${HUMAN_WRITE_GATE}
+
+${VISUAL_PROOF_GATE}`;
 }

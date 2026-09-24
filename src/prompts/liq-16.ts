@@ -1,4 +1,5 @@
 import type { TriggerIssue } from "./liq-9.js";
+import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "../guardrails.js";
 
 export function isLiq16(issue: TriggerIssue) {
   return issue.identifier.toUpperCase() === "LIQ-16";
@@ -32,7 +33,10 @@ Fix ONLY:
 
 ## Required plan output
 Exact files, specialist findings, out-of-scope, end with "Await approval before implementing."
-Stay in plan mode.`;
+Stay in plan mode.
+
+${HUMAN_WRITE_GATE}
+If the human later says implement / build / approve: still open PRs only — never merge or deploy.`;
 }
 
 export function buildLiq16ImplementPrompt(issue: TriggerIssue, rosterBlock: string): string {
@@ -47,7 +51,9 @@ Spawn security-reviewer + quality-reviewer on the diff before PRs.
 1. Reporting Help centre (sidebar + header) opens a menu matching Core.
 2. Remove broken-help demo failure from the default click path.
 3. Update Playwright parity if present.
-4. Open PRs. Do NOT merge. No shared package / shell merge / BFF work.
+4. Open PRs. No shared package / shell merge / BFF work.
 
-Human merges.`;
+${HUMAN_WRITE_GATE}
+
+${VISUAL_PROOF_GATE}`;
 }

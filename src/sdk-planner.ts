@@ -8,6 +8,7 @@ import { describeRoster } from "./models.js";
 import { buildLiq15ImplementPrompt, buildLiq15PlanPrompt, isLiq15 } from "./prompts/liq-15.js";
 import { buildLiq16ImplementPrompt, buildLiq16PlanPrompt, isLiq16 } from "./prompts/liq-16.js";
 import { buildImplementPrompt, buildPlanPrompt, type TriggerIssue } from "./prompts/liq-9.js";
+import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "./guardrails.js";
 
 export type PlanRunRecord = {
   runId: string;
@@ -323,11 +324,13 @@ export async function startImplementRun(issue: TriggerIssue): Promise<PlanRunRec
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const prompt = isLiq16(issue)
+    const promptBase = isLiq16(issue)
       ? buildLiq16ImplementPrompt(issue, rosterBlock)
       : isLiq15(issue)
         ? buildLiq15ImplementPrompt(issue, rosterBlock)
         : buildImplementPrompt(issue, rosterBlock);
+    // Always restate write-gate at send-time so chat continuations inherit it.
+    const prompt = `${promptBase}\n\n${HUMAN_WRITE_GATE}\n\n${VISUAL_PROOF_GATE}`;
     const run = await agent.send(prompt);
     const streamed = await collectAssistantText(run.stream());
     const waited = await run.wait();

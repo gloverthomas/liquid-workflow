@@ -1,3 +1,5 @@
+import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "../guardrails.js";
+
 export type TriggerIssue = {
   id: string;
   identifier: string;
@@ -42,7 +44,10 @@ Produce a reviewable plan (not a big-bang merge) that:
 6. Ends with a clear human write-gate: "Await approval before implementing."
 
 Do not invent a shared BFF. Do not migrate all reporting into Core in this run.
-Stay in plan mode — investigate and plan only.`;
+Stay in plan mode — investigate and plan only.
+
+${HUMAN_WRITE_GATE}
+If later approved to implement: PRs only — never merge or deploy.`;
 }
 
 export function buildImplementPrompt(issue: TriggerIssue, rosterBlock: string): string {
@@ -66,7 +71,9 @@ Before opening PRs, spawn **security-reviewer** and **quality-reviewer** on the 
 2. In Reporting: treat legacy #sales-summary as an alias that rewrites to #revenue-summary and opens Revenue summary (no stale alert for that hash).
 3. Update liquid-accounting-core/e2e/cross-repo-parity.spec.ts accordingly.
 4. Open PRs (autoCreatePR is enabled). Include PR URLs and any Vercel preview URLs in your final message.
-5. Do NOT merge. Do NOT expand into shell extraction, status pills, or a shared BFF.
+5. Do NOT expand into shell extraction, status pills, or a shared BFF.
 
-Human write-gate remains on merge to main / production.`;
+${HUMAN_WRITE_GATE}
+
+${VISUAL_PROOF_GATE}`;
 }

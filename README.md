@@ -87,6 +87,7 @@ Endpoints (loopback):
 | POST | `/trigger` | Manual demo trigger (LIQ-9 by default) |
 | POST | `/implement` | Human write-gate → implement + PR |
 | POST | `/webhooks/linear` | Linear webhook receiver |
+| POST | `/webhooks/github` | PR merged → curated Linear issue **Done** |
 | GET | `/runs` | In-memory + `runs/*.json` history |
 | GET | `/runs/:id` | One run (includes `eval` + `modelRoster`) |
 
@@ -105,12 +106,29 @@ Filter Cursor Agents UI → Source → **SDK** to see the run (and nested specia
 2. For local demos, use `npm run trigger` instead of exposing the tunnel.
 3. Set `LINEAR_WEBHOOK_SECRET` to verify signatures (unsigned accepted only when secret is empty — loopback demo only).
 
-Trigger filter defaults: state **In Progress**, issue **LIQ-9**.
+Trigger filter defaults: state **In Progress**, hero issues **LIQ-16 / LIQ-15 / LIQ-9**.
+
+## GitHub merge → Linear Done
+
+When a PR into `main` is merged on Core or Reporting and the title/body/branch mentions `LIQ-N`:
+
+1. `POST /webhooks/github` moves that curated Linear issue to **Done**
+2. Posts a Slack brief + Linear comment
+
+Setup (per repo or org):
+
+1. GitHub → Settings → Webhooks → URL `https://<tunnel>/webhooks/github`
+2. Content type `application/json`, events: **Pull requests**
+3. Optional secret → `GITHUB_WEBHOOK_SECRET` (unsigned accepted only when empty — demo only)
+
+## Visual proof on PRs
+
+Implement agents must attach screenshots (`docs/pr-proof/` + PR body). Playwright CI uploads `e2e/proof/` artifacts and comments the run on the PR. Humans can still paste manual before/after shots via the PR template.
 
 ## Notifications (optional)
 
 - `SLACK_WEBHOOK_URL` — incoming webhook posts the plan/implement brief (PR + preview links when present)
-- `LINEAR_API_KEY` — comments the plan onto the issue
+- `LINEAR_API_KEY` — comments the plan onto the issue; required for merge→Done
 
 ## Guardrails
 
