@@ -7,6 +7,7 @@ import { evaluateRun, latestEvalForIssue, type EvalReport } from "./eval/harness
 import { describeRoster } from "./models.js";
 import { buildLiq15ImplementPrompt, buildLiq15PlanPrompt, isLiq15 } from "./prompts/liq-15.js";
 import { buildLiq16ImplementPrompt, buildLiq16PlanPrompt, isLiq16 } from "./prompts/liq-16.js";
+import { buildLiq17ImplementPrompt, buildLiq17PlanPrompt, isLiq17 } from "./prompts/liq-17.js";
 import { buildImplementPrompt, buildPlanPrompt, type TriggerIssue } from "./prompts/liq-9.js";
 import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "./guardrails.js";
 
@@ -189,11 +190,13 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const prompt = isLiq16(issue)
-      ? buildLiq16PlanPrompt(issue, rosterBlock)
-      : isLiq15(issue)
-        ? buildLiq15PlanPrompt(issue, rosterBlock)
-        : buildPlanPrompt(issue, rosterBlock);
+    const prompt = isLiq17(issue)
+      ? buildLiq17PlanPrompt(issue, rosterBlock)
+      : isLiq16(issue)
+        ? buildLiq16PlanPrompt(issue, rosterBlock)
+        : isLiq15(issue)
+          ? buildLiq15PlanPrompt(issue, rosterBlock)
+          : buildPlanPrompt(issue, rosterBlock);
     const run = await agent.send(prompt);
     const streamed = await collectAssistantText(run.stream());
     const waited = await run.wait();
@@ -219,9 +222,13 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
   }
 }
 
-/** Human write-gate passed: implement bounded LIQ-9 fix and open PRs. */
-export async function startImplementRun(issue: TriggerIssue): Promise<PlanRunRecord> {
-  if (config.evalGate) {
+/** Human write-gate passed: implement bounded fix and open PRs. */
+export async function startImplementRun(
+  issue: TriggerIssue,
+  options: { bypassEval?: boolean } = {},
+): Promise<PlanRunRecord> {
+  const enforceEval = config.evalGate && !options.bypassEval;
+  if (enforceEval) {
     const prior = latestEvalForIssue(issue.identifier, "plan");
     if (!prior) {
       const blocked: PlanRunRecord = {
@@ -324,11 +331,13 @@ export async function startImplementRun(issue: TriggerIssue): Promise<PlanRunRec
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const promptBase = isLiq16(issue)
-      ? buildLiq16ImplementPrompt(issue, rosterBlock)
-      : isLiq15(issue)
-        ? buildLiq15ImplementPrompt(issue, rosterBlock)
-        : buildImplementPrompt(issue, rosterBlock);
+    const promptBase = isLiq17(issue)
+      ? buildLiq17ImplementPrompt(issue, rosterBlock)
+      : isLiq16(issue)
+        ? buildLiq16ImplementPrompt(issue, rosterBlock)
+        : isLiq15(issue)
+          ? buildLiq15ImplementPrompt(issue, rosterBlock)
+          : buildImplementPrompt(issue, rosterBlock);
     // Always restate write-gate at send-time so chat continuations inherit it.
     const prompt = `${promptBase}\n\n${HUMAN_WRITE_GATE}\n\n${VISUAL_PROOF_GATE}`;
     const run = await agent.send(prompt);

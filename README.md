@@ -125,6 +125,25 @@ Setup (per repo or org):
 
 Implement agents must attach screenshots (`docs/pr-proof/` + PR body). Playwright CI uploads `e2e/proof/` artifacts and comments the run on the PR. Humans can still paste manual before/after shots via the PR template.
 
+## Demo state machine
+
+| Step | Surface | What happens |
+| --- | --- | --- |
+| Product miss | Reporting | `/signal` → Slack + Linear **Todo** (assigned). **No SDK plan yet.** |
+| Triage | Linear / Slack | Human moves → **In Progress** → webhook → Cursor SDK **plan** |
+| Approve | Linear | Human moves → **In Review** → webhook → Cursor SDK **implement** / PRs (eval bypass; human is the gate) |
+| Ship | GitHub | Human merges → webhook → Linear **Done** |
+
+Refresh ephemeral tunnel URLs:
+
+```bash
+npx cloudflared tunnel --url http://127.0.0.1:4100
+node scripts/refresh-public-endpoints.mjs https://<tunnel>.trycloudflare.com
+# then redeploy Reporting so VITE_WORKFLOW_SIGNAL_URL bakes in
+```
+
+Point Linear webhook at `https://<tunnel>/webhooks/linear` (Issue update).
+
 ## Notifications (optional)
 
 - `SLACK_WEBHOOK_URL` — incoming webhook posts the plan/implement brief (PR + preview links when present)

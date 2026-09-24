@@ -54,9 +54,23 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
 
   if (record.kind === "plan" || record.status === "dry_run") {
     const id = record.issue.identifier.toUpperCase();
+    const isLiq17 = id === "LIQ-17";
     const isLiq16 = id === "LIQ-16";
     const isLiq15 = id === "LIQ-15";
-    if (isLiq16) {
+    if (isLiq17) {
+      requireMention(
+        "mentions-notifications",
+        "Plan references Notifications / bell shell parity",
+        ["notification", "notifications", "bell", "inbox"],
+        true,
+      );
+      requireMention(
+        "mentions-core-and-reporting",
+        "Plan names Core and Reporting",
+        ["liquid-accounting-core", "liquid-accounting-reporting", "core", "reporting"],
+        true,
+      );
+    } else if (isLiq16) {
       requireMention(
         "mentions-help-centre",
         "Plan references Help centre shell parity",
@@ -142,12 +156,29 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
   }
 
   if (record.kind === "implement") {
-    requireMention(
-      "implement-revenue",
-      "Implement targets #revenue-summary",
-      ["#revenue-summary", "revenue-summary"],
-      true,
-    );
+    const id = record.issue.identifier.toUpperCase();
+    if (id === "LIQ-17") {
+      requireMention(
+        "implement-notifications",
+        "Implement targets Notifications parity",
+        ["notification", "notifications", "bell"],
+        true,
+      );
+    } else if (id === "LIQ-16") {
+      requireMention(
+        "implement-help",
+        "Implement targets Help centre parity",
+        ["help", "help centre", "help-centre"],
+        true,
+      );
+    } else {
+      requireMention(
+        "implement-revenue",
+        "Implement targets #revenue-summary",
+        ["#revenue-summary", "revenue-summary"],
+        true,
+      );
+    }
     requireMention(
       "no-merge-claim",
       "Implement does not claim production merge",

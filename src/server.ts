@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { buildSpecialistAgents } from "./agents.js";
 import { config } from "./config.js";
 import { evaluateRun, latestEvalForIssue } from "./eval/harness.js";
-import { shouldTriggerFromWebhook, verifyLinearSignature, type LinearWebhookPayload } from "./linear-webhook.js";
+import { verifyLinearSignature, routeLinearWebhook, type LinearWebhookPayload } from "./linear-webhook.js";
 import { shouldCloseFromMerge, verifyGitHubSignature, type GitHubPullRequestPayload } from "./github-webhook.js";
 import { markIssueDone } from "./linear-done.js";
 import { notifyPlanComplete, notifySignalReceived, LINEAR_ISSUE_UUID } from "./notify.js";
@@ -43,15 +43,15 @@ function notFound(res: ServerResponse) {
 }
 
 function parseIssue(body: Partial<TriggerIssue>): TriggerIssue {
-  const identifier = (body.identifier ?? "LIQ-16").toUpperCase();
+  const identifier = (body.identifier ?? "LIQ-17").toUpperCase();
   return {
     id: LINEAR_ISSUE_UUID[identifier] ?? body.id ?? "manual",
     identifier,
     title:
       body.title ??
-      "[Hero] Help centre works in Core but is dead in Reporting",
+      "[Hero] Notifications work in Core but are dead in Reporting",
     url: body.url ?? `https://linear.app/liquid-accounting/issue/${identifier}`,
-    stateName: body.stateName ?? "In Progress",
+    stateName: body.stateName ?? "Todo",
   };
 }
 
@@ -84,8 +84,12 @@ async function handleTrigger(issue: TriggerIssue, res: ServerResponse) {
   sendJson(res, record.status === "failed" ? 500 : 200, { record, notifications });
 }
 
-async function handleImplement(issue: TriggerIssue, res: ServerResponse) {
-  const record = await startImplementRun(issue);
+async function handleImplement(
+  issue: TriggerIssue,
+  res: ServerResponse,
+  options: { bypassEval?: boolean } = {},
+) {
+  const record = await startImplementRun(issue, options);
   const notifications = await notifyPlanComplete(record);
   sendJson(res, record.status === "failed" ? 500 : 200, { record, notifications });
 }
@@ -112,9 +116,9 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
     : {};
 
   const issue = parseIssue({
-    identifier: body.issueIdentifier ?? "LIQ-16",
+    identifier: body.issueIdentifier ?? "LIQ-17",
     title: body.title,
-    stateName: "In Progress",
+    stateName: "Todo",
   });
 
   console.log(
@@ -123,10 +127,11 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
       issue: issue.identifier,
       source: body.source,
       hash: body.hash,
+      mode: "triage_only",
     }),
   );
 
-  // Ack fast so the browser does not time out waiting on a cloud agent.
+  // Triage only — do NOT start the SDK plan. Humans move Linear → In Progress.
   const ackNotifications = await notifySignalReceived({
     issue,
     source: body.source,
@@ -134,29 +139,16 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
   });
   sendJson(res, 202, {
     accepted: true,
-    queued: true,
+    queued: false,
+    triage: true,
     signal: {
       source: body.source,
       hash: body.hash,
       reportingUrl: body.reportingUrl,
     },
     notifications: ackNotifications,
+    next: "Move Linear issue to In Progress to start the Cursor SDK plan.",
   });
-
-  void (async () => {
-    try {
-      const record = await startPlanRun(issue);
-      await notifyPlanComplete(record);
-    } catch (error) {
-      console.error(
-        JSON.stringify({
-          event: "signal_plan_failed",
-          issue: issue.identifier,
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    }
-  })();
 }
 
 const server = createServer(async (req, res) => {
@@ -248,8 +240,10 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/implement") {
       const raw = await readBody(req);
-      const body = raw.length ? (JSON.parse(raw.toString("utf8")) as Partial<TriggerIssue>) : {};
-      await handleImplement(parseIssue(body), res);
+      const body = raw.length
+        ? (JSON.parse(raw.toString("utf8")) as Partial<TriggerIssue> & { bypassEval?: boolean })
+        : {};
+      await handleImplement(parseIssue(body), res, { bypassEval: Boolean(body.bypassEval) });
       return;
     }
 
@@ -264,14 +258,50 @@ const server = createServer(async (req, res) => {
       }
 
       const payload = JSON.parse(raw) as LinearWebhookPayload;
-      const issue = shouldTriggerFromWebhook(payload);
-      if (!issue) {
+      const routed = routeLinearWebhook(payload);
+      if (!routed) {
         sendJson(res, 200, { ignored: true });
         return;
       }
 
-      // Respond quickly then continue? For demo we await so the caller sees the plan.
-      await handleTrigger(issue, res);
+      if (routed.action === "plan") {
+        // Fast ack then plan in background so Linear webhook doesn't time out.
+        sendJson(res, 202, { accepted: true, action: "plan", issue: routed.issue.identifier });
+        void (async () => {
+          try {
+            const record = await startPlanRun(routed.issue);
+            await notifyPlanComplete(record);
+          } catch (error) {
+            console.error(
+              JSON.stringify({
+                event: "linear_plan_failed",
+                issue: routed.issue.identifier,
+                message: error instanceof Error ? error.message : String(error),
+              }),
+            );
+          }
+        })();
+        return;
+      }
+
+      // In Review → implement (human approved). Bypass eval — the state move is the gate.
+      sendJson(res, 202, { accepted: true, action: "implement", issue: routed.issue.identifier });
+      void (async () => {
+        try {
+          const record = await startImplementRun(routed.issue, {
+            bypassEval: config.implementBypassEvalOnLinear,
+          });
+          await notifyPlanComplete(record);
+        } catch (error) {
+          console.error(
+            JSON.stringify({
+              event: "linear_implement_failed",
+              issue: routed.issue.identifier,
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        }
+      })();
       return;
     }
 

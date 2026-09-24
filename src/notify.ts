@@ -7,6 +7,7 @@ export const LINEAR_ISSUE_UUID: Record<string, string> = {
   "LIQ-9": "40e7bf03-44bb-4fa0-9226-b3054041a43f",
   "LIQ-15": "a6199abd-5052-4cce-bfa7-93c73a086094",
   "LIQ-16": "7d93e202-e7ee-4e14-8356-c4c6909d8ae9",
+  "LIQ-17": "13058e52-b25d-46fe-a1d8-8587667350ec",
 };
 
 function issueLinearUrl(issue: TriggerIssue): string | undefined {
@@ -93,6 +94,7 @@ async function linearComment(issueId: string, body: string): Promise<string> {
 
 async function ensureAssignee(issueId: string): Promise<void> {
   if (!config.linearApiKey || !config.linearAssigneeId) return;
+  const todoStateId = process.env.LINEAR_TODO_STATE_ID?.trim() || "84569319-0517-4fd2-b04f-81c02d0f7192";
   await fetch("https://api.linear.app/graphql", {
     method: "POST",
     headers: {
@@ -101,11 +103,15 @@ async function ensureAssignee(issueId: string): Promise<void> {
     },
     body: JSON.stringify({
       query: `
-        mutation IssueAssign($id: String!, $assigneeId: String!) {
-          issueUpdate(id: $id, input: { assigneeId: $assigneeId }) { success }
+        mutation IssueTriage($id: String!, $assigneeId: String!, $stateId: String!) {
+          issueUpdate(id: $id, input: { assigneeId: $assigneeId, stateId: $stateId }) { success }
         }
       `,
-      variables: { id: issueId, assigneeId: config.linearAssigneeId },
+      variables: {
+        id: issueId,
+        assigneeId: config.linearAssigneeId,
+        stateId: todoStateId,
+      },
     }),
   });
 }
@@ -141,8 +147,8 @@ export async function notifySignalReceived(args: {
               args.source ? `Source: \`${args.source}\`` : null,
               args.hash ? `Seam: \`${args.hash}\`` : null,
               "",
-              "Sentry/PostHog caught a shell-parity miss. Ticket is assigned for triage.",
-              "*Next:* open Linear → move to *In Progress* to start the Cursor SDK plan.",
+              "Sentry/PostHog caught a shell-parity miss. Ticket is assigned (**Todo**) for triage.",
+              "*Next:* Linear → *In Progress* (plan) → review → *In Review* (implement/PR) → you merge → *Done*.",
             ]
               .filter(Boolean)
               .join("\n"),
@@ -177,7 +183,8 @@ export async function notifySignalReceived(args: {
         `- Source: \`${args.source ?? "unknown"}\``,
         args.hash ? `- Seam: \`${args.hash}\`` : "",
         "",
-        "Assigned for triage. Move this issue to **In Progress** to start the Cursor SDK plan.",
+        "Assigned for triage (**Todo**). Move this issue to **In Progress** to start the Cursor SDK plan.",
+        "After the plan, move to **In Review** to approve implement / PRs.",
         "Do not treat this comment as approval to open a PR.",
       ]
         .filter(Boolean)
@@ -211,8 +218,8 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
     record.kind === "implement"
       ? "*Next:* review PR + BugBot/CI + preview, then *you* merge. Agents never push prod."
       : evalPassed === false
-        ? "*Next:* open the agent plan, fix gaps, move Linear back through *In Progress* to re-plan."
-        : "*Next:* review the plan, then say *implement* / *approve* in the agent chat (or approve in Slack once wired). Agents open PRs only — humans merge and ship prod.";
+        ? "*Next:* open the agent plan, fix gaps, then Linear → *In Progress* again to re-plan."
+        : "*Next:* review the plan. When happy, Linear → *In Review* to start implement/PR (or say *implement* in the agent chat).";
 
   const actionElements: Array<Record<string, unknown>> = [];
   if (record.agentUrl) {

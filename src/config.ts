@@ -81,10 +81,19 @@ export const config = {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
-  triggerIssueIds: (process.env.TRIGGER_ISSUE_IDS ?? "LIQ-16,LIQ-15,LIQ-9")
+  /** Linear states that mean "human approved plan → implement/PR". */
+  implementStates: (process.env.IMPLEMENT_STATES ?? "In Review")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+  triggerIssueIds: (process.env.TRIGGER_ISSUE_IDS ?? "LIQ-17,LIQ-16,LIQ-15,LIQ-9")
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),
+  /** When true, Linear In Review → implement bypasses eval gate (human move is the gate). */
+  implementBypassEvalOnLinear: (process.env.IMPLEMENT_BYPASS_EVAL_ON_LINEAR ?? "true")
+    .trim()
+    .toLowerCase() !== "false",
 };
 
 if (!["development", "test", undefined].includes(process.env.NODE_ENV) && config.host !== "127.0.0.1") {
