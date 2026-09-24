@@ -32,11 +32,28 @@ function notFound(res: ServerResponse) {
 function parseIssue(body: Partial<TriggerIssue>): TriggerIssue {
   return {
     id: body.id ?? "manual",
-    identifier: (body.identifier ?? "LIQ-9").toUpperCase(),
-    title: body.title ?? "[Hero] Core still deep-links to renamed Sales summary report path",
-    url: body.url ?? "https://linear.app/liquid-accounting/issue/LIQ-9",
+    identifier: (body.identifier ?? "LIQ-15").toUpperCase(),
+    title:
+      body.title ??
+      "[Hero] Create Invoice / Reports deep-link to missing #invoice-performance",
+    url: body.url ?? "https://linear.app/liquid-accounting/issue/LIQ-15",
     stateName: body.stateName ?? "In Progress",
   };
+}
+
+function cors(res: ServerResponse, origin: string | undefined) {
+  const allowed = new Set([
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+    "http://127.0.0.1:3001",
+    "http://localhost:3001",
+  ]);
+  if (origin && allowed.has(origin)) {
+    res.setHeader("access-control-allow-origin", origin);
+    res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+    res.setHeader("access-control-allow-headers", "content-type");
+    res.setHeader("vary", "Origin");
+  }
 }
 
 async function handleTrigger(issue: TriggerIssue, res: ServerResponse) {
@@ -49,6 +66,58 @@ async function handleImplement(issue: TriggerIssue, res: ServerResponse) {
   const record = await startImplementRun(issue);
   const notifications = await notifyPlanComplete(record);
   sendJson(res, record.status === "failed" ? 500 : 200, { record, notifications });
+}
+
+async function handleSignal(req: IncomingMessage, res: ServerResponse) {
+  const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+  cors(res, origin);
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  const raw = await readBody(req);
+  const body = raw.length
+    ? (JSON.parse(raw.toString("utf8")) as {
+        issueIdentifier?: string;
+        title?: string;
+        source?: string;
+        hash?: string;
+        reportingUrl?: string;
+        url?: string;
+      })
+    : {};
+
+  const issue = parseIssue({
+    id: "signal",
+    identifier: body.issueIdentifier ?? "LIQ-15",
+    title: body.title,
+    url: "https://linear.app/liquid-accounting/issue/LIQ-15",
+    stateName: "In Progress",
+  });
+
+  console.log(
+    JSON.stringify({
+      event: "signal_received",
+      issue: issue.identifier,
+      source: body.source,
+      hash: body.hash,
+    }),
+  );
+
+  const record = await startPlanRun(issue);
+  const notifications = await notifyPlanComplete(record);
+  sendJson(res, record.status === "failed" ? 500 : 200, {
+    accepted: true,
+    signal: {
+      source: body.source,
+      hash: body.hash,
+      reportingUrl: body.reportingUrl,
+    },
+    record,
+    notifications,
+  });
 }
 
 const server = createServer(async (req, res) => {
@@ -127,6 +196,14 @@ const server = createServer(async (req, res) => {
       const raw = await readBody(req);
       const body = raw.length ? (JSON.parse(raw.toString("utf8")) as Partial<TriggerIssue>) : {};
       await handleTrigger(parseIssue(body), res);
+      return;
+    }
+
+    if (
+      (req.method === "POST" || req.method === "OPTIONS") &&
+      url.pathname === "/signal"
+    ) {
+      await handleSignal(req, res);
       return;
     }
 

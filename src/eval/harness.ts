@@ -53,18 +53,34 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
   };
 
   if (record.kind === "plan" || record.status === "dry_run") {
-    requireMention(
-      "mentions-revenue-summary",
-      "Plan references #revenue-summary (canonical hash)",
-      ["#revenue-summary", "revenue-summary"],
-      true,
-    );
-    requireMention(
-      "mentions-legacy-sales",
-      "Plan acknowledges legacy #sales-summary",
-      ["#sales-summary", "sales-summary"],
-      true,
-    );
+    const isLiq15 = record.issue.identifier.toUpperCase() === "LIQ-15";
+    if (isLiq15) {
+      requireMention(
+        "mentions-invoice-performance",
+        "Plan references #invoice-performance (broken hash)",
+        ["#invoice-performance", "invoice-performance"],
+        true,
+      );
+      requireMention(
+        "mentions-revenue-fix",
+        "Plan retargets to #revenue-summary (or equivalent real report)",
+        ["#revenue-summary", "revenue-summary"],
+        true,
+      );
+    } else {
+      requireMention(
+        "mentions-revenue-summary",
+        "Plan references #revenue-summary (canonical hash)",
+        ["#revenue-summary", "revenue-summary"],
+        true,
+      );
+      requireMention(
+        "mentions-legacy-sales",
+        "Plan acknowledges legacy #sales-summary",
+        ["#sales-summary", "sales-summary"],
+        true,
+      );
+    }
     requireMention(
       "lists-files-or-repos",
       "Plan names Core and/or Reporting files or repos",

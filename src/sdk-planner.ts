@@ -6,6 +6,7 @@ import { config } from "./config.js";
 import { evaluateRun, latestEvalForIssue, type EvalReport } from "./eval/harness.js";
 import { describeRoster } from "./models.js";
 import { buildImplementPrompt, buildPlanPrompt, type TriggerIssue } from "./prompts/liq-9.js";
+import { buildLiq15ImplementPrompt, buildLiq15PlanPrompt, isLiq15 } from "./prompts/liq-15.js";
 
 export type PlanRunRecord = {
   runId: string;
@@ -112,6 +113,7 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
   if (config.dryRun) {
     record.status = "dry_run";
     record.finishedAt = new Date().toISOString();
+    const is15 = issue.identifier.toUpperCase() === "LIQ-15";
     record.summary = [
       `DRY RUN plan for ${issue.identifier}`,
       "",
@@ -131,10 +133,13 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
       "- security-reviewer — Intelligence — BFF/auth/deep-link abuse",
       "- quality-reviewer — Cost — Playwright parity + out-of-scope diffs",
       "",
-      "Bounded fix: Core #sales-summary → #revenue-summary (LIQ-9 only)",
-      "Files: liquid-accounting-core/src/main.tsx, liquid-accounting-reporting/src/main.tsx,",
+      is15
+        ? "Bounded fix: Core #invoice-performance → #revenue-summary (LIQ-15 only)"
+        : "Bounded fix: Core #sales-summary → #revenue-summary (LIQ-9 only)",
+      "Files: liquid-accounting-core/src/main.tsx, liquid-accounting-core/src/demoSignal.ts,",
+      "       liquid-accounting-reporting/src/main.tsx (miss copy only),",
       "       liquid-accounting-core/e2e/cross-repo-parity.spec.ts",
-      "Out-of-scope: shared BFF, full shell extraction, status pills.",
+      "Out-of-scope: shared BFF, full shell extraction, status pills, new Invoice performance product.",
       "Security: PASS (dry-run synthetic). Quality: PASS (dry-run synthetic).",
       "Human write-gate: Await approval before implementing.",
       "",
@@ -172,7 +177,7 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const prompt = buildPlanPrompt(issue, rosterBlock);
+    const prompt = isLiq15(issue) ? buildLiq15PlanPrompt(issue, rosterBlock) : buildPlanPrompt(issue, rosterBlock);
     const run = await agent.send(prompt);
     const streamed = await collectAssistantText(run.stream());
     const waited = await run.wait();
@@ -303,7 +308,9 @@ export async function startImplementRun(issue: TriggerIssue): Promise<PlanRunRec
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const prompt = buildImplementPrompt(issue, rosterBlock);
+    const prompt = isLiq15(issue)
+      ? buildLiq15ImplementPrompt(issue, rosterBlock)
+      : buildImplementPrompt(issue, rosterBlock);
     const run = await agent.send(prompt);
     const streamed = await collectAssistantText(run.stream());
     const waited = await run.wait();
