@@ -1,0 +1,27 @@
+{
+  "name": "liquid-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Liquid governed workflow: Linear trigger → Cursor SDK planner across Core + Reporting",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "trigger": "tsx src/cli-trigger.ts",
+    "implement": "tsx src/cli-implement.ts",
+    "eval": "tsx src/cli-eval.ts",
+    "models": "tsx src/cli-models.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.32"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.8.0"
+  }
+}
