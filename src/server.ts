@@ -3,7 +3,7 @@ import { buildSpecialistAgents } from "./agents.js";
 import { config } from "./config.js";
 import { evaluateRun, latestEvalForIssue } from "./eval/harness.js";
 import { shouldTriggerFromWebhook, verifyLinearSignature, type LinearWebhookPayload } from "./linear-webhook.js";
-import { notifyPlanComplete } from "./notify.js";
+import { notifyPlanComplete, notifySignalReceived, LINEAR_ISSUE_UUID } from "./notify.js";
 import { getRun, listRuns, startImplementRun, startPlanRun } from "./sdk-planner.js";
 import type { TriggerIssue } from "./prompts/liq-9.js";
 
@@ -41,13 +41,14 @@ function notFound(res: ServerResponse) {
 }
 
 function parseIssue(body: Partial<TriggerIssue>): TriggerIssue {
+  const identifier = (body.identifier ?? "LIQ-16").toUpperCase();
   return {
-    id: body.id ?? "manual",
-    identifier: (body.identifier ?? "LIQ-16").toUpperCase(),
+    id: LINEAR_ISSUE_UUID[identifier] ?? body.id ?? "manual",
+    identifier,
     title:
       body.title ??
       "[Hero] Help centre works in Core but is dead in Reporting",
-    url: body.url ?? "https://linear.app/liquid-accounting/issue/LIQ-16",
+    url: body.url ?? `https://linear.app/liquid-accounting/issue/${identifier}`,
     stateName: body.stateName ?? "In Progress",
   };
 }
@@ -109,10 +110,8 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
     : {};
 
   const issue = parseIssue({
-    id: "signal",
-    identifier: body.issueIdentifier ?? "LIQ-15",
+    identifier: body.issueIdentifier ?? "LIQ-16",
     title: body.title,
-    url: "https://linear.app/liquid-accounting/issue/LIQ-15",
     stateName: "In Progress",
   });
 
@@ -125,18 +124,37 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
     }),
   );
 
-  const record = await startPlanRun(issue);
-  const notifications = await notifyPlanComplete(record);
-  sendJson(res, record.status === "failed" ? 500 : 200, {
+  // Ack fast so the browser does not time out waiting on a cloud agent.
+  const ackNotifications = await notifySignalReceived({
+    issue,
+    source: body.source,
+    hash: body.hash,
+  });
+  sendJson(res, 202, {
     accepted: true,
+    queued: true,
     signal: {
       source: body.source,
       hash: body.hash,
       reportingUrl: body.reportingUrl,
     },
-    record,
-    notifications,
+    notifications: ackNotifications,
   });
+
+  void (async () => {
+    try {
+      const record = await startPlanRun(issue);
+      await notifyPlanComplete(record);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "signal_plan_failed",
+          issue: issue.identifier,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  })();
 }
 
 const server = createServer(async (req, res) => {
