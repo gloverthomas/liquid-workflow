@@ -84,7 +84,7 @@ export function hydrateRunsFromDisk(dir = join(process.cwd(), "runs")): number {
 export function summarizeRun(record: PlanRunRecord) {
   return {
     runId: record.runId,
-    kind: record.kind,
+    kind: record.kind ?? "plan",
     status: record.status,
     issue: { identifier: record.issue.identifier, title: record.issue.title, url: record.issue.url },
     startedAt: record.startedAt,
