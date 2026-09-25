@@ -1,5 +1,6 @@
 import type { TriggerIssue } from "./liq-9.js";
 import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "../guardrails.js";
+import { LIQUID_FEATURE_MAP } from "../feature-map.js";
 
 export function isLiq15(issue: TriggerIssue) {
   return issue.identifier.toUpperCase() === "LIQ-15";
@@ -24,6 +25,8 @@ Required specialist passes before you finalize the plan:
 2. Spawn **quality-reviewer** for Playwright parity and out-of-scope risk.
 Incorporate both PASS/FAIL findings.
 
+${LIQUID_FEATURE_MAP}
+
 ## Bounded scope (LIQ-15 only)
 Bug: Core Create Invoice ("Create & view report") and Reports nav deep-link to Reporting \`#invoice-performance\`, which does not exist. Reporting shows a deep-link miss alert; Sentry/PostHog fire; Core POSTs to liquid-workflow \`/signal\`.
 
@@ -35,10 +38,11 @@ Fix ONLY:
 
 ## Required plan output
 1. Exact files to change.
-2. Playwright / parity notes.
+2. Playwright / parity notes (runtime proof).
 3. Out-of-scope (shared BFF, shell merge, new Invoice performance report product).
 4. Security + quality specialist findings.
-5. End with: "Await approval before implementing."
+5. CI jobs that must pass.
+6. End with: "Await approval before implementing."
 
 Stay in plan mode.
 

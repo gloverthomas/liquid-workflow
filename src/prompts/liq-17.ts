@@ -1,5 +1,6 @@
 import type { TriggerIssue } from "./liq-9.js";
 import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "../guardrails.js";
+import { LIQUID_FEATURE_MAP } from "../feature-map.js";
 
 export function isLiq17(issue: TriggerIssue) {
   return issue.identifier.toUpperCase() === "LIQ-17";
@@ -21,6 +22,8 @@ ${rosterBlock}
 
 Spawn **security-reviewer** and **quality-reviewer** before finalizing.
 
+${LIQUID_FEATURE_MAP}
+
 ## Bounded scope (LIQ-17 only)
 Bug: Core header Notifications (bell) opens a working inbox popover.
 Reporting shows the same bell but the control is dead — click fails, Sentry fires, /signal opens this curated ticket for triage.
@@ -28,11 +31,11 @@ Reporting shows the same bell but the control is dead — click fails, Sentry fi
 Fix ONLY:
 1. Reporting: implement Notifications popover parity with Core (open/close, Escape/outside click, sample items).
 2. Remove the intentional failure path (error toast + auto-signal) from the happy path once fixed — or gate signal behind demo env.
-3. Playwright assertion that Notifications opens in both apps.
+3. Playwright assertion that Notifications opens in both apps (runtime proof, not code-only reasoning).
 4. Do NOT extract a shared package / merge shells / touch BFF / rebuild Help.
 
 ## Required plan output
-Exact files, specialist findings, out-of-scope, end with "Await approval before implementing."
+Exact files, specialist findings, out-of-scope, feature-map path used for verification, CI jobs that must pass, end with "Await approval before implementing."
 Stay in plan mode.
 
 ${HUMAN_WRITE_GATE}
@@ -47,11 +50,14 @@ ${rosterBlock}
 
 Spawn security-reviewer + quality-reviewer on the diff before PRs.
 
+${LIQUID_FEATURE_MAP}
+
 ## Implement ONLY
-1. Reporting Notifications bell opens a popover matching Core behaviour.
+1. Reporting Notifications bell opens a popover matching Core behaviour (drive the feature-map path).
 2. Remove broken-notifications demo failure from the default click path.
 3. Update Playwright parity / proof screenshots under e2e/proof + docs/pr-proof.
-4. Open PRs. No shared package / shell merge / BFF / Help regress.
+4. Open **atomic** PRs for this ticket only. No shared package / shell merge / BFF / Help regress.
+5. PR body must name CI jobs \`build\` / \`help-proof\` (Reporting) and any Core parity job touched.
 
 ${HUMAN_WRITE_GATE}
 

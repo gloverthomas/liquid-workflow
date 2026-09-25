@@ -14,7 +14,9 @@
     "implement": "tsx src/cli-implement.ts",
     "eval": "tsx src/cli-eval.ts",
     "models": "tsx src/cli-models.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tunnel:ha:install": "bash scripts/install-tunnel-ha.sh",
+    "tunnel:ha:uninstall": "bash scripts/uninstall-tunnel-ha.sh"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.32"

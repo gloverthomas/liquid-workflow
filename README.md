@@ -80,9 +80,11 @@ Endpoints (loopback):
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/health` | Liveness |
+| GET | `/health` | Liveness JSON (probes) |
+| GET | `/status` | HTML status of kill switches + gates (also `/`) |
 | GET | `/models` | Resolved model roster + specialist names |
-| GET | `/evals/latest?issue=LIQ-9` | Latest eval report |
+| GET | `/evals` | HTML dashboard of recent eval reports |
+| GET | `/evals/latest?issue=LIQ-17` | Latest eval JSON for an issue |
 | POST | `/evals/rerun` | `{ "runId" }` re-score |
 | POST | `/trigger` | Manual demo trigger (LIQ-9 by default) |
 | POST | `/implement` | Human write-gate → implement + PR |
@@ -137,8 +139,17 @@ Implement agents must attach screenshots (`docs/pr-proof/` + PR body). Playwrigh
 Refresh ephemeral tunnel URLs:
 
 ```bash
-npx cloudflared tunnel --url http://127.0.0.1:4100
-node scripts/refresh-public-endpoints.mjs https://<tunnel>.trycloudflare.com
+# Named Cloudflare Tunnel (stable URL — preferred)
+# Requires DNS for liquid-accounting.world on Cloudflare (glen/robin NS).
+# One-off:
+#   cloudflared tunnel run --token "$CLOUDFLARE_TUNNEL_TOKEN"
+# HA + auto-restart (2 LaunchAgents, KeepAlive):
+npm run tunnel:ha:install
+# PUBLIC_TUNNEL_URL=https://workflow.liquid-accounting.world
+
+# Ephemeral quick tunnel (URL changes every run — avoid for demos)
+# npx cloudflared tunnel --url http://127.0.0.1:4100
+# node scripts/refresh-public-endpoints.mjs https://<tunnel>.trycloudflare.com
 # then redeploy Reporting so VITE_WORKFLOW_SIGNAL_URL bakes in
 ```
 

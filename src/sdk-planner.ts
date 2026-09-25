@@ -4,10 +4,13 @@ import { Agent } from "@cursor/sdk";
 import { buildSpecialistAgents } from "./agents.js";
 import { config } from "./config.js";
 import { evaluateRun, latestEvalForIssue, type EvalReport } from "./eval/harness.js";
+import { checkMainCiGreen, formatCiGateError } from "./github-checks.js";
+import { formalApprovalBlockReason } from "./write-gate.js";
 import { describeRoster } from "./models.js";
 import { buildLiq15ImplementPrompt, buildLiq15PlanPrompt, isLiq15 } from "./prompts/liq-15.js";
 import { buildLiq16ImplementPrompt, buildLiq16PlanPrompt, isLiq16 } from "./prompts/liq-16.js";
 import { buildLiq17ImplementPrompt, buildLiq17PlanPrompt, isLiq17 } from "./prompts/liq-17.js";
+import { buildLiq24ImplementPrompt, buildLiq24PlanPrompt, isLiq24 } from "./prompts/liq-24.js";
 import { buildImplementPrompt, buildPlanPrompt, type TriggerIssue } from "./prompts/liq-9.js";
 import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "./guardrails.js";
 
@@ -190,7 +193,9 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const prompt = isLiq17(issue)
+    const prompt = isLiq24(issue)
+      ? buildLiq24PlanPrompt(issue, rosterBlock)
+      : isLiq17(issue)
       ? buildLiq17PlanPrompt(issue, rosterBlock)
       : isLiq16(issue)
         ? buildLiq16PlanPrompt(issue, rosterBlock)
@@ -225,8 +230,26 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
 /** Human write-gate passed: implement bounded fix and open PRs. */
 export async function startImplementRun(
   issue: TriggerIssue,
-  options: { bypassEval?: boolean } = {},
+  options: { bypassEval?: boolean; bypassWriteGate?: boolean; bypassCiGate?: boolean } = {},
 ): Promise<PlanRunRecord> {
+  if (!options.bypassWriteGate) {
+    const writeGate = formalApprovalBlockReason(issue.identifier);
+    if (writeGate) {
+      const blocked: PlanRunRecord = {
+        runId: newRunId(),
+        issue,
+        kind: "implement",
+        status: "failed",
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        dryRun: config.dryRun,
+        error: writeGate,
+      };
+      persist(blocked);
+      return blocked;
+    }
+  }
+
   const enforceEval = config.evalGate && !options.bypassEval;
   if (enforceEval) {
     const prior = latestEvalForIssue(issue.identifier, "plan");
@@ -255,6 +278,24 @@ export async function startImplementRun(
         dryRun: config.dryRun,
         error: `EVAL_GATE: plan eval ${prior.evalId} failed. Fix plan findings before /implement.`,
         eval: prior,
+      };
+      persist(blocked);
+      return blocked;
+    }
+  }
+
+  if (config.ciGate && !options.bypassCiGate) {
+    const ci = await checkMainCiGreen();
+    if (!ci.ok) {
+      const blocked: PlanRunRecord = {
+        runId: newRunId(),
+        issue,
+        kind: "implement",
+        status: "failed",
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        dryRun: config.dryRun,
+        error: formatCiGateError(ci),
       };
       persist(blocked);
       return blocked;
@@ -331,7 +372,9 @@ export async function startImplementRun(
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const promptBase = isLiq17(issue)
+    const promptBase = isLiq24(issue)
+      ? buildLiq24ImplementPrompt(issue, rosterBlock)
+      : isLiq17(issue)
       ? buildLiq17ImplementPrompt(issue, rosterBlock)
       : isLiq16(issue)
         ? buildLiq16ImplementPrompt(issue, rosterBlock)
