@@ -44,7 +44,7 @@ const catalog = {
 };
 
 async function main() {
-  const issue = catalog[argId];
+  const issue = catalog[argId as keyof typeof catalog];
   if (!issue) {
     console.error(`Unknown issue ${argId}. Known: ${Object.keys(catalog).join(", ")}`);
     process.exit(1);

@@ -26,9 +26,8 @@ export type LinearWebhookPayload = {
 export type LinearWebhookAction = "plan" | "implement";
 
 export function verifyLinearSignature(rawBody: string, signatureHeader: string | undefined): boolean {
-  if (!config.linearWebhookSecret) {
-    return true;
-  }
+  // Public tunnel: without a secret we cannot tell a real webhook from anyone else, so refuse.
+  if (!config.linearWebhookSecret) return false;
   if (!signatureHeader) return false;
   const digest = createHmac("sha256", config.linearWebhookSecret).update(rawBody).digest("hex");
   const expected = Buffer.from(digest, "utf8");

@@ -120,6 +120,8 @@ export const config = {
     .toLowerCase() !== "false",
   /** Shared secret for GET/POST /approve (optional; empty = open on loopback demo). */
   approveToken: process.env.APPROVE_TOKEN?.trim() || "",
+  /** Bearer token for every non-public route (see src/access.ts). ≥24 chars; empty = those routes fail closed. */
+  apiToken: (process.env.WORKFLOW_API_TOKEN?.trim().length ?? 0) >= 24 ? process.env.WORKFLOW_API_TOKEN!.trim() : "",
   /** When true, implement also requires latest CI workflow on main to be green. */
   ciGate: (process.env.CI_GATE ?? "true").trim().toLowerCase() !== "false",
   /** When true, missing GITHUB_TOKEN fails the CI gate instead of soft-skip. */

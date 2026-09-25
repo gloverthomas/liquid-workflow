@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { checkApiAccess, checkApproveAccess, routeAccess } from "./access.js";
 import { buildSpecialistAgents } from "./agents.js";
 import { config } from "./config.js";
 import { evaluateRun, latestEvalForIssue, listRecentEvals } from "./eval/harness.js";
@@ -23,7 +24,7 @@ import {
 import { accessLog, pruneRetention } from "./retention.js";
 import { recordApproval, latestValidApproval } from "./write-gate.js";
 import { checkMainCiGreen } from "./github-checks.js";
-import { getRun, listRuns, startImplementRun, startPlanRun } from "./sdk-planner.js";
+import { getRun, hydrateRunsFromDisk, listRuns, startImplementRun, startPlanRun, summarizeRun } from "./sdk-planner.js";
 import type { TriggerIssue } from "./prompts/liq-9.js";
 
 function readBody(req: IncomingMessage): Promise<Buffer> {
@@ -345,11 +346,23 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
   });
 }
 
+hydrateRunsFromDisk();
+
 const server = createServer(async (req, res) => {
   const host = req.headers.host ?? `${config.host}:${config.port}`;
   const url = new URL(req.url ?? "/", `http://${host}`);
 
   try {
+    // Public tunnel: everything except dashboards, /signal and signed webhooks needs the API token.
+    if (routeAccess(req.method ?? "GET", url.pathname) === "api") {
+      const decision = checkApiAccess(req.headers.authorization, config);
+      if (!decision.ok) {
+        accessLog({ route: url.pathname, denied: decision.error });
+        sendJson(res, decision.status, { error: decision.error });
+        return;
+      }
+    }
+
     if (req.method === "GET" && url.pathname === "/health") {
       sendJson(res, 200, healthPayload());
       return;
@@ -379,8 +392,9 @@ const server = createServer(async (req, res) => {
         ""
       ).toUpperCase();
       const token = body.token || url.searchParams.get("token") || "";
-      if (config.approveToken && token !== config.approveToken) {
-        sendJson(res, 401, { error: "invalid_approve_token" });
+      const approveDecision = checkApproveAccess(req.headers.authorization, token, config);
+      if (!approveDecision.ok) {
+        sendJson(res, approveDecision.status, { error: approveDecision.error });
         return;
       }
       if (!issueId) {
@@ -445,6 +459,12 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/evals/reports") {
+      const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 200, 1), 500);
+      sendJson(res, 200, { reports: listRecentEvals(limit) });
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/evals/latest") {
       const issue = (url.searchParams.get("issue") ?? "LIQ-9").toUpperCase();
       const kind = (url.searchParams.get("kind") ?? "plan") as "plan" | "implement";
@@ -476,7 +496,8 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/runs") {
-      sendJson(res, 200, { runs: listRuns() });
+      const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 500);
+      sendJson(res, 200, { runs: listRuns().slice(0, limit).map(summarizeRun) });
       return;
     }
 
@@ -511,7 +532,8 @@ const server = createServer(async (req, res) => {
       const body = raw.length
         ? (JSON.parse(raw.toString("utf8")) as Partial<TriggerIssue> & { bypassEval?: boolean })
         : {};
-      await handleImplement(parseIssue(body), res, { bypassEval: Boolean(body.bypassEval) });
+      // Never let a caller skip the eval gate over HTTP (the Linear webhook path has its own env switch).
+      await handleImplement(parseIssue(body), res, { bypassEval: false });
       return;
     }
 

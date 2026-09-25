@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Agent } from "@cursor/sdk";
 import { buildSpecialistAgents } from "./agents.js";
@@ -54,6 +54,48 @@ export function getRun(runId: string) {
 
 export function listRuns() {
   return [...runs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+const MAX_HYDRATED_RUNS = 500;
+
+/** Reload saved run records so history (and eval tracking) survives restarts. */
+export function hydrateRunsFromDisk(dir = join(process.cwd(), "runs")): number {
+  if (!existsSync(dir)) return 0;
+  const files = readdirSync(dir)
+    .filter((f) => f.startsWith("run_") && f.endsWith(".json"))
+    .sort()
+    .slice(-MAX_HYDRATED_RUNS);
+  let loaded = 0;
+  for (const file of files) {
+    try {
+      const record = JSON.parse(readFileSync(join(dir, file), "utf8")) as PlanRunRecord;
+      if (record.runId && !runs.has(record.runId)) {
+        runs.set(record.runId, record);
+        loaded += 1;
+      }
+    } catch {
+      /* skip unreadable artifacts */
+    }
+  }
+  return loaded;
+}
+
+/** Compact run for list endpoints: no plan text or prompts, just what a dashboard needs. */
+export function summarizeRun(record: PlanRunRecord) {
+  return {
+    runId: record.runId,
+    kind: record.kind,
+    status: record.status,
+    issue: { identifier: record.issue.identifier, title: record.issue.title, url: record.issue.url },
+    startedAt: record.startedAt,
+    finishedAt: record.finishedAt ?? null,
+    dryRun: record.dryRun,
+    agentUrl: record.agentUrl ?? null,
+    prUrls: record.prUrls ?? [],
+    summary: record.summary ? record.summary.slice(0, 280) : null,
+    error: record.error ? record.error.slice(0, 200) : null,
+    eval: record.eval ? { passed: record.eval.passed, failed: record.eval.checks.filter((c) => !c.passed).map((c) => c.id) } : null,
+  };
 }
 
 function collectAssistantText(events: AsyncIterable<unknown>): Promise<string> {
