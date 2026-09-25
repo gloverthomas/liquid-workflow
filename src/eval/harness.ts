@@ -54,10 +54,24 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
 
   if (record.kind === "plan" || record.status === "dry_run") {
     const id = record.issue.identifier.toUpperCase();
+    const isLiq24 = id === "LIQ-24";
     const isLiq17 = id === "LIQ-17";
     const isLiq16 = id === "LIQ-16";
     const isLiq15 = id === "LIQ-15";
-    if (isLiq17) {
+    if (isLiq24) {
+      requireMention(
+        "mentions-ai-assistant",
+        "Plan references AI Assistant / right-rail chat parity",
+        ["ai assistant", "assistant", "right rail", "grok", "chat"],
+        true,
+      );
+      requireMention(
+        "mentions-core-and-reporting",
+        "Plan names Core and Reporting",
+        ["liquid-accounting-core", "liquid-accounting-reporting", "core", "reporting"],
+        true,
+      );
+    } else if (isLiq17) {
       requireMention(
         "mentions-notifications",
         "Plan references Notifications / bell shell parity",
@@ -118,8 +132,20 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
     );
     requireMention(
       "playwright-parity",
-      "Plan mentions Playwright / parity assertions",
-      ["playwright", "parity", "e2e"],
+      "Plan mentions Playwright / parity / runtime e2e proof",
+      ["playwright", "parity", "e2e", "runtime", "screenshot", "proof"],
+      true,
+    );
+    requireMention(
+      "ci-jobs",
+      "Plan names CI / required status checks that must pass",
+      ["parity-proof", "help-proof", "assistant-unit", "smoke", "ci", "status check", "github actions", "vitest", "rtl"],
+      true,
+    );
+    requireMention(
+      "feature-map-path",
+      "Plan references a concrete UI path (assistant / bell / Help / hash / feature map)",
+      ["feature map", "feature-map", "ai assistant", "assistant", "bell", "help", "#revenue", "#sales", "header", "popover", "right rail"],
       true,
     );
     requireMention(
@@ -132,6 +158,12 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
       "human-write-gate",
       "Plan ends with human write-gate / await approval",
       ["await approval", "write-gate", "write gate", "human"],
+      true,
+    );
+    requireMention(
+      "atomic-pr",
+      "Plan keeps scope to one hero ticket / atomic PR",
+      ["atomic", "one ticket", "this ticket", "bounded", "only"],
       true,
     );
     requireMention(
@@ -157,7 +189,14 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
 
   if (record.kind === "implement") {
     const id = record.issue.identifier.toUpperCase();
-    if (id === "LIQ-17") {
+    if (id === "LIQ-24") {
+      requireMention(
+        "implement-ai-assistant",
+        "Implement targets AI Assistant parity",
+        ["ai assistant", "assistant", "chat", "/api/v1/assistant"],
+        true,
+      );
+    } else if (id === "LIQ-17") {
       requireMention(
         "implement-notifications",
         "Implement targets Notifications parity",
@@ -184,6 +223,18 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
       "Implement does not claim production merge",
       ["merged to main", "deployed to production", "pushed prod"],
       false,
+    );
+    requireMention(
+      "visual-proof",
+      "Implement mentions screenshots / docs/pr-proof / e2e proof",
+      ["pr-proof", "e2e/proof", "screenshot", "proof", "playwright"],
+      true,
+    );
+    requireMention(
+      "ci-named",
+      "Implement names CI jobs that must go green",
+      ["parity-proof", "help-proof", "assistant-unit", "smoke", "build", "ci", "vitest"],
+      true,
     );
   }
 
@@ -233,4 +284,44 @@ export function latestEvalForIssue(issueId: string, kind: PlanRunRecord["kind"] 
     }
   }
   return null;
+}
+
+/** Newest eval reports across issues (for /evals dashboard). */
+export function listRecentEvals(limit = 40): EvalReport[] {
+  const dir = join(process.cwd(), "runs");
+  if (!existsSync(dir)) return [];
+  const files = readdirSync(dir)
+    .filter((f) => f.startsWith("eval_") && f.endsWith(".json"))
+    .sort()
+    .reverse();
+  const out: EvalReport[] = [];
+  for (const file of files) {
+    if (out.length >= limit) break;
+    try {
+      out.push(JSON.parse(readFileSync(join(dir, file), "utf8")) as EvalReport);
+    } catch {
+      /* skip */
+    }
+  }
+  return out;
+}
+
+export function formatEvalChecklistMarkdown(report: EvalReport | undefined): string {
+  if (!report?.checks?.length) return "";
+  const lines = [
+    `### Eval gate — **${report.passed ? "PASSED" : "FAILED"}**`,
+    "",
+    `| Check | Result |`,
+    `| --- | --- |`,
+    ...report.checks.map((c) => `| ${c.passed ? "✅" : "❌"} ${c.description} | \`${c.id}\` |`),
+    "",
+    `_eval \`${report.evalId}\` · run \`${report.runId}\`_`,
+  ];
+  return lines.join("\n");
+}
+
+export function formatEvalChecklistSlack(report: EvalReport | undefined): string {
+  if (!report?.checks?.length) return "";
+  const lines = report.checks.map((c) => `${c.passed ? "• ✅" : "• ❌"} ${c.description}`);
+  return [`*Eval checklist* (\`${report.evalId}\`)`, ...lines].join("\n");
 }
