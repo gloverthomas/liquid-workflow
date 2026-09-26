@@ -1,6 +1,8 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { isHeroIssue } from "../hero-issues.js";
 import type { PlanRunRecord } from "../sdk-planner.js";
+import { titleKeywords } from "./title-keywords.js";
 
 export type EvalCheck = {
   id: string;
@@ -110,7 +112,7 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
         ["#revenue-summary", "revenue-summary"],
         true,
       );
-    } else {
+    } else if (id === "LIQ-9") {
       requireMention(
         "mentions-revenue-summary",
         "Plan references #revenue-summary (canonical hash)",
@@ -122,6 +124,28 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
         "Plan acknowledges legacy #sales-summary",
         ["#sales-summary", "sales-summary"],
         true,
+      );
+    } else {
+      requireMention(
+        "mentions-ticket-id",
+        `Plan references ticket ${id}`,
+        [id.toLowerCase(), id],
+        true,
+      );
+      const keywords = titleKeywords(record.issue.title);
+      if (keywords.length > 0) {
+        requireMention(
+          "mentions-title-theme",
+          "Plan reflects words from the Linear ticket title",
+          keywords,
+          true,
+        );
+      }
+      requireMention(
+        "no-liq9-playbook",
+        "Plan does not default to LIQ-9 #sales-summary migration language",
+        ["#sales-summary", "sales-summary deep-link", "liq-9 only"],
+        false,
       );
     }
     requireMention(
@@ -210,11 +234,33 @@ export function evaluateRun(record: PlanRunRecord): EvalReport {
         ["help", "help centre", "help-centre"],
         true,
       );
-    } else {
+    } else if (id === "LIQ-9") {
       requireMention(
         "implement-revenue",
         "Implement targets #revenue-summary",
         ["#revenue-summary", "revenue-summary"],
+        true,
+      );
+    } else if (!isHeroIssue(id)) {
+      requireMention(
+        "implement-ticket-id",
+        `Implement references ${id}`,
+        [id.toLowerCase(), id],
+        true,
+      );
+      const keywords = titleKeywords(record.issue.title);
+      if (keywords.length > 0) {
+        requireMention(
+          "implement-title-theme",
+          "Implement reflects the Linear ticket title theme",
+          keywords,
+          true,
+        );
+      }
+      requireMention(
+        "implement-proof-path",
+        `Implement names ticket-specific proof path e2e/proof/${id.toLowerCase()}-fix.png`,
+        [`e2e/proof/${id.toLowerCase()}-fix`, `${id.toLowerCase()}-fix.png`],
         true,
       );
     }

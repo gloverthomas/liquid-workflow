@@ -30,11 +30,11 @@ export function verifyGitHubSignature(rawBody: string, signatureHeader: string |
 }
 
 export function extractIssueIdentifier(payload: GitHubPullRequestPayload): string | null {
-  const haystack = [
-    payload.pull_request?.title,
-    payload.pull_request?.body,
-    payload.pull_request?.head?.ref,
-  ]
+  const title = payload.pull_request?.title ?? "";
+  const titleMatch = title.match(ISSUE_RE);
+  if (titleMatch) return titleMatch[1]!.toUpperCase();
+
+  const haystack = [payload.pull_request?.body, payload.pull_request?.head?.ref]
     .filter(Boolean)
     .join("\n");
   const match = haystack.match(ISSUE_RE);
@@ -63,9 +63,6 @@ export function shouldCloseFromMerge(payload: GitHubPullRequestPayload): {
 
   const identifier = extractIssueIdentifier(payload);
   if (!identifier) return null;
-  if (config.triggerIssueIds.length > 0 && !config.triggerIssueIds.includes(identifier)) {
-    return null;
-  }
 
   return {
     identifier,

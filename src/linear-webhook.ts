@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { TriggerIssue } from "./prompts/liq-9.js";
 import { config } from "./config.js";
-import { LINEAR_ISSUE_UUID } from "./notify.js";
+import { isWorkflowEligible } from "./workflow-eligibility.js";
 import { parseApproveCommand, recordApproval } from "./write-gate.js";
 
 export type LinearWebhookPayload = {
@@ -13,6 +13,7 @@ export type LinearWebhookPayload = {
     title?: string;
     url?: string;
     body?: string;
+    description?: string;
     issueId?: string;
     issue?: { id?: string; identifier?: string; title?: string; url?: string };
     state?: { name?: string; type?: string };
@@ -38,14 +39,15 @@ export function verifyLinearSignature(rawBody: string, signatureHeader: string |
 
 function parseIssue(payload: LinearWebhookPayload): TriggerIssue | null {
   const identifier = payload.data?.identifier?.trim().toUpperCase() ?? "";
-  if (config.triggerIssueIds.length > 0 && !config.triggerIssueIds.includes(identifier)) {
-    return null;
-  }
-  if (!payload.data?.id || !identifier || !payload.data.title) return null;
+  const title = payload.data?.title?.trim() ?? "";
+  const description = payload.data?.description?.trim() ?? "";
+  if (!payload.data?.id || !identifier || !title) return null;
+  if (!isWorkflowEligible(identifier, title, description)) return null;
   return {
     id: payload.data.id,
     identifier,
-    title: payload.data.title,
+    title,
+    description: description || undefined,
     url: payload.data.url,
     stateName: payload.data?.state?.name?.trim() ?? "",
   };
@@ -85,23 +87,10 @@ export function routeLinearCommentApproval(
   if (!parseApproveCommand(payload.data?.body)) return null;
 
   const issueUuid = payload.data?.issueId ?? payload.data?.issue?.id ?? "";
-  let identifier =
-    payload.data?.issue?.identifier?.trim().toUpperCase() ??
-    Object.entries(LINEAR_ISSUE_UUID).find(([, id]) => id === issueUuid)?.[0];
-
-  if (!identifier && issueUuid) {
-    // Fall back: match curated UUID map reverse
-    for (const [key, id] of Object.entries(LINEAR_ISSUE_UUID)) {
-      if (id === issueUuid) {
-        identifier = key;
-        break;
-      }
-    }
-  }
+  const identifier = payload.data?.issue?.identifier?.trim().toUpperCase() ?? "";
+  const title = payload.data?.issue?.title?.trim() ?? "";
   if (!identifier) return null;
-  if (config.triggerIssueIds.length > 0 && !config.triggerIssueIds.includes(identifier)) {
-    return null;
-  }
+  if (!isWorkflowEligible(identifier, title)) return null;
 
   const actor =
     payload.data?.user?.name ||

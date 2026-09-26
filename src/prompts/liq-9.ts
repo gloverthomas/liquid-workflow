@@ -1,10 +1,11 @@
-import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "../guardrails.js";
+import { HUMAN_WRITE_GATE, visualProofGate } from "../guardrails.js";
 import { LIQUID_FEATURE_MAP } from "../feature-map.js";
 
 export type TriggerIssue = {
   id: string;
   identifier: string;
   title: string;
+  description?: string;
   url?: string;
   stateName: string;
 };
@@ -79,5 +80,5 @@ Before opening PRs, spawn **security-reviewer** and **quality-reviewer** on the 
 
 ${HUMAN_WRITE_GATE}
 
-${VISUAL_PROOF_GATE}`;
+${visualProofGate(issue.identifier)}`;
 }

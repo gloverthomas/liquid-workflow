@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit",
     "tunnel:ha:install": "bash scripts/install-tunnel-ha.sh",
     "tunnel:ha:uninstall": "bash scripts/uninstall-tunnel-ha.sh",
-    "test": "tsx --test src/access.test.ts"
+    "test": "tsx --test src/access.test.ts src/workflow-eligibility.test.ts src/github-webhook.test.ts src/eval/harness-dynamic.test.ts"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.32"

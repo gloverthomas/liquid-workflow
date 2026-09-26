@@ -1,7 +1,9 @@
 import { config } from "./config.js";
-import { LINEAR_ISSUE_UUID } from "./notify.js";
-
-const DONE_STATE_CACHE = new Map<string, string>();
+import {
+  findIssueByIdentifier,
+  postLinearComment,
+  resolveDoneStateIdForIssue,
+} from "./linear-client.js";
 
 async function linearGql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   if (!config.linearApiKey) {
@@ -25,93 +27,51 @@ async function linearGql<T>(query: string, variables?: Record<string, unknown>):
   return json.data as T;
 }
 
-async function resolveDoneStateId(issueId: string): Promise<string> {
-  if (config.linearDoneStateId) return config.linearDoneStateId;
-  const cached = DONE_STATE_CACHE.get(issueId);
-  if (cached) return cached;
-
-  const data = await linearGql<{
-    issue: { team: { states: { nodes: Array<{ id: string; name: string; type: string }> } } };
-  }>(
-    `query($id: String!) {
-      issue(id: $id) {
-        team {
-          states { nodes { id name type } }
-        }
-      }
-    }`,
-    { id: issueId },
-  );
-
-  const done =
-    data.issue.team.states.nodes.find((s) => s.type === "completed" && s.name.toLowerCase() === "done") ??
-    data.issue.team.states.nodes.find((s) => s.type === "completed");
-  if (!done) throw new Error("No completed/Done workflow state found on Linear team");
-  DONE_STATE_CACHE.set(issueId, done.id);
-  return done.id;
-}
-
 export async function markIssueDone(args: {
   identifier: string;
   prUrl?: string;
   repo?: string;
 }): Promise<{ success: boolean; issueId: string; state: string; slack?: string; linear?: string }> {
-  const issueId = LINEAR_ISSUE_UUID[args.identifier.toUpperCase()];
-  if (!issueId) {
-    throw new Error(`No curated Linear UUID for ${args.identifier}`);
+  const issue = await findIssueByIdentifier(args.identifier.toUpperCase());
+  if (!issue) {
+    throw new Error(`Linear issue not found: ${args.identifier}`);
   }
 
-  const doneStateId = await resolveDoneStateId(issueId);
+  const doneStateId = await resolveDoneStateIdForIssue(issue.id);
   await linearGql(
     `mutation($id: String!, $stateId: String!) {
       issueUpdate(id: $id, input: { stateId: $stateId }) { success }
     }`,
-    { id: issueId, stateId: doneStateId },
+    { id: issue.id, stateId: doneStateId },
   );
 
-  let linearComment = "skipped";
-  if (config.linearApiKey) {
-    const body = [
+  const linearComment = await postLinearComment(
+    issue.id,
+    [
       "## Merged — moved to Done",
       "",
       args.prUrl ? `- PR: ${args.prUrl}` : "",
       args.repo ? `- Repo: \`${args.repo}\`` : "",
       "",
-      "GitHub merge webhook closed this hero ticket. Humans already reviewed BugBot/CI/preview.",
+      "GitHub merge webhook closed this ticket. Humans already reviewed BugBot/CI/preview.",
     ]
       .filter(Boolean)
-      .join("\n");
-    const response = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: config.linearApiKey,
-      },
-      body: JSON.stringify({
-        query: `
-          mutation CommentCreate($input: CommentCreateInput!) {
-            commentCreate(input: $input) { success }
-          }
-        `,
-        variables: { input: { issueId, body } },
-      }),
-    });
-    linearComment = response.ok ? "posted" : `failed:${response.status}`;
-  }
+      .join("\n"),
+  );
 
   let slack = "skipped";
   if (config.slackWebhookUrl) {
     const mention = config.slackMentionUserId ? `<@${config.slackMentionUserId}> ` : "";
-    const linearUrl = `https://linear.app/liquid-accounting/issue/${args.identifier}`;
+    const linearUrl = issue.url ?? `https://linear.app/liquid-accounting/issue/${issue.identifier}`;
     const response = await fetch(config.slackWebhookUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        text: `${mention}${args.identifier} marked Done after PR merge`,
+        text: `${mention}${issue.identifier} marked Done after PR merge`,
         blocks: [
           {
             type: "header",
-            text: { type: "plain_text", text: `Done · ${args.identifier}`, emoji: true },
+            text: { type: "plain_text", text: `Done · ${issue.identifier}`, emoji: true },
           },
           {
             type: "section",
@@ -152,5 +112,5 @@ export async function markIssueDone(args: {
     slack = response.ok ? "posted" : `failed:${response.status}`;
   }
 
-  return { success: true, issueId, state: "Done", slack, linear: linearComment };
+  return { success: true, issueId: issue.id, state: "Done", slack, linear: linearComment };
 }
