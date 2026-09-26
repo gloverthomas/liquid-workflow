@@ -1,4 +1,5 @@
 import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "../guardrails.js";
+import { LIQUID_FEATURE_MAP } from "../feature-map.js";
 
 export type TriggerIssue = {
   id: string;
@@ -28,6 +29,8 @@ Required specialist passes before you finalize the plan:
 2. Spawn **quality-reviewer** (Cost-effective) for route parity, Playwright flips, and out-of-scope diff risk.
 Incorporate both PASS/FAIL findings into your plan. Do not skip them.
 
+${LIQUID_FEATURE_MAP}
+
 ## Bounded scope (do not expand)
 Fix ONLY the LIQ-9 deep-link miss:
 - Reporting renamed Sales summary → Revenue summary (#revenue-summary).
@@ -41,10 +44,11 @@ Produce a reviewable plan (not a big-bang merge) that:
 3. Names Playwright assertions in liquid-accounting-core/e2e/cross-repo-parity.spec.ts that should flip.
 4. Calls out out-of-scope work (status pills, full shell extraction, shared BFF) that must NOT ship in this PR.
 5. Summarizes security-reviewer and quality-reviewer findings (PASS/FAIL).
-6. Ends with a clear human write-gate: "Await approval before implementing."
+6. Names CI jobs that must pass (\`parity-proof\` / \`smoke\` / \`build\`).
+7. Ends with a clear human write-gate: "Await approval before implementing."
 
 Do not invent a shared BFF. Do not migrate all reporting into Core in this run.
-Stay in plan mode — investigate and plan only.
+Stay in plan mode — investigate and plan only. Prefer runtime/feature-map paths over code-only guesses.
 
 ${HUMAN_WRITE_GATE}
 If later approved to implement: PRs only — never merge or deploy.`;

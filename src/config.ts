@@ -77,6 +77,20 @@ export const config = {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  /** Public base URL for the demo tunnel (used in Slack/Linear eval links). */
+  publicTunnelUrl: (process.env.PUBLIC_TUNNEL_URL ?? "").trim().replace(/\/$/, ""),
+  /**
+   * Master kill switch. When false: /signal, Linear plan/implement, and GitHub→Done
+   * are rejected (503). /health stays up for probes.
+   */
+  workflowEnabled: (process.env.WORKFLOW_ENABLED ?? "true").trim().toLowerCase() !== "false",
+  /** When false, product /signal triage is disabled (Linear/GitHub may still run). */
+  signalEnabled: (process.env.SIGNAL_ENABLED ?? "true").trim().toLowerCase() !== "false",
+  /** When false, Linear In Progress/In Review auto plan/implement is disabled. */
+  linearAutoEnabled: (process.env.LINEAR_AUTO_ENABLED ?? "true").trim().toLowerCase() !== "false",
+  /** When false, GitHub merge → Linear Done is disabled. */
+  githubAutoDoneEnabled:
+    (process.env.GITHUB_AUTO_DONE_ENABLED ?? "true").trim().toLowerCase() !== "false",
   triggerStates: (process.env.TRIGGER_STATES ?? "In Progress")
     .split(",")
     .map((s) => s.trim().toLowerCase())
@@ -86,14 +100,32 @@ export const config = {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
-  triggerIssueIds: (process.env.TRIGGER_ISSUE_IDS ?? "LIQ-17,LIQ-16,LIQ-15,LIQ-9")
+  triggerIssueIds: (process.env.TRIGGER_ISSUE_IDS ?? "LIQ-24,LIQ-17,LIQ-16,LIQ-15,LIQ-9")
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),
-  /** When true, Linear In Review → implement bypasses eval gate (human move is the gate). */
-  implementBypassEvalOnLinear: (process.env.IMPLEMENT_BYPASS_EVAL_ON_LINEAR ?? "true")
+  /**
+   * When true, Linear In Review → implement bypasses eval gate.
+   * Production default is false (plan eval must pass). Demo may set true.
+   */
+  implementBypassEvalOnLinear: (process.env.IMPLEMENT_BYPASS_EVAL_ON_LINEAR ?? "false")
+    .trim()
+    .toLowerCase() === "true",
+  /**
+   * Require formal /approve (HTTP, Slack button, or Linear comment) before implement.
+   * Demo may set false to keep status-drag-only UX.
+   */
+  requireFormalApproval: (process.env.REQUIRE_FORMAL_APPROVAL ?? "true")
     .trim()
     .toLowerCase() !== "false",
+  /** Shared secret for GET/POST /approve (optional; empty = open on loopback demo). */
+  approveToken: process.env.APPROVE_TOKEN?.trim() || "",
+  /** Bearer token for every non-public route (see src/access.ts). ≥24 chars; empty = those routes fail closed. */
+  apiToken: (process.env.WORKFLOW_API_TOKEN?.trim().length ?? 0) >= 24 ? process.env.WORKFLOW_API_TOKEN!.trim() : "",
+  /** When true, implement also requires latest CI workflow on main to be green. */
+  ciGate: (process.env.CI_GATE ?? "true").trim().toLowerCase() !== "false",
+  /** When true, missing GITHUB_TOKEN fails the CI gate instead of soft-skip. */
+  ciGateStrict: (process.env.CI_GATE_STRICT ?? "false").trim().toLowerCase() === "true",
 };
 
 if (!["development", "test", undefined].includes(process.env.NODE_ENV) && config.host !== "127.0.0.1") {

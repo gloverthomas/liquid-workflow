@@ -1,6 +1,9 @@
 import { config } from "./config.js";
 import type { PlanRunRecord } from "./sdk-planner.js";
 import type { TriggerIssue } from "./prompts/liq-9.js";
+import { formatEvalChecklistMarkdown, formatEvalChecklistSlack } from "./eval/harness.js";
+import { scrubPii } from "./pii.js";
+import { latestValidApproval } from "./write-gate.js";
 
 /** Curated Linear issue UUIDs — signal comments here; we do not auto-spam new tickets. */
 export const LINEAR_ISSUE_UUID: Record<string, string> = {
@@ -8,6 +11,7 @@ export const LINEAR_ISSUE_UUID: Record<string, string> = {
   "LIQ-15": "a6199abd-5052-4cce-bfa7-93c73a086094",
   "LIQ-16": "7d93e202-e7ee-4e14-8356-c4c6909d8ae9",
   "LIQ-17": "13058e52-b25d-46fe-a1d8-8587667350ec",
+  "LIQ-24": "eff0aee0-f93d-4ecf-9548-6f1ea5a4ea3f",
 };
 
 function issueLinearUrl(issue: TriggerIssue): string | undefined {
@@ -19,7 +23,7 @@ function issueLinearUrl(issue: TriggerIssue): string | undefined {
 /** Turn agent stream dumps into a short Slack-readable blurb. */
 export function summarizeForSlack(raw: string | undefined, maxChars = 520): string {
   if (!raw?.trim()) return "No plan summary captured — open the agent link for the full write-up.";
-  const cleaned = raw
+  const cleaned = scrubPii(raw)
     .replace(/\r\n/g, "\n")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/https?:\/\/\S+/g, " ")
@@ -206,6 +210,11 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
         ? "Eval gate: *passed*"
         : "Eval gate: *failed* — re-run plan before implement"
       : null;
+  const evalChecklistMd = formatEvalChecklistMarkdown(record.eval);
+  const evalChecklistSlack = formatEvalChecklistSlack(record.eval);
+  const publicBase = config.publicTunnelUrl || `http://127.0.0.1:${config.port}`;
+  const evalsPage = `${publicBase}/evals`;
+  const statusPage = `${publicBase}/status`;
   const linearId =
     LINEAR_ISSUE_UUID[record.issue.identifier.toUpperCase()] ??
     (record.issue.id && record.issue.id !== "manual" && record.issue.id !== "signal"
@@ -214,12 +223,22 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
   const linearUrl = issueLinearUrl(record.issue);
   const mention = slackMention();
 
+  const approval = latestValidApproval(record.issue.identifier);
+  const approveBase = `${publicBase}/approve`;
+  const approveUrl = new URL(approveBase);
+  approveUrl.searchParams.set("issue", record.issue.identifier.toUpperCase());
+  if (config.approveToken) approveUrl.searchParams.set("token", config.approveToken);
+
   const nextStep =
     record.kind === "implement"
       ? "*Next:* review PR + BugBot/CI + preview, then *you* merge. Agents never push prod."
       : evalPassed === false
         ? "*Next:* open the agent plan, fix gaps, then Linear → *In Progress* again to re-plan."
-        : "*Next:* review the plan. When happy, Linear → *In Review* to start implement/PR (or say *implement* in the agent chat).";
+        : config.requireFormalApproval
+          ? approval
+            ? `*Next:* formal approval recorded (\`${approval.approvalId}\`). Linear → *In Review* to implement.`
+            : `*Next:* click *Approve implement* (or Linear comment \`/approve\`), then Linear → *In Review*.`
+          : "*Next:* review the plan. When happy, Linear → *In Review* to start implement/PR.";
 
   const actionElements: Array<Record<string, unknown>> = [];
   if (record.agentUrl) {
@@ -230,6 +249,19 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
       style: "primary",
     });
   }
+  if (
+    record.kind === "plan" &&
+    record.status !== "failed" &&
+    config.requireFormalApproval &&
+    !approval
+  ) {
+    actionElements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Approve implement", emoji: true },
+      url: approveUrl.toString(),
+      style: "primary",
+    });
+  }
   if (linearUrl) {
     actionElements.push({
       type: "button",
@@ -237,6 +269,11 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
       url: linearUrl,
     });
   }
+  actionElements.push({
+    type: "button",
+    text: { type: "plain_text", text: "Open evals", emoji: true },
+    url: evalsPage,
+  });
   for (const pr of record.prUrls ?? []) {
     actionElements.push({
       type: "button",
@@ -268,7 +305,15 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
           type: "section",
           text: {
             type: "mrkdwn",
-            text: [`${mention}*${record.issue.title}*`, evalLine, "", blurb].filter(Boolean).join("\n"),
+            text: [
+              `${mention}*${record.issue.title}*`,
+              evalLine,
+              "",
+              blurb,
+              evalChecklistSlack ? `\n${evalChecklistSlack}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n"),
           },
         },
         ...(actionElements.length
@@ -279,7 +324,12 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
           elements: [
             {
               type: "mrkdwn",
-              text: [`Run \`${record.runId}\``, nextStep].join("\n"),
+              text: [
+                `Run \`${record.runId}\``,
+                `Evals: ${evalsPage}`,
+                `Status: ${statusPage}`,
+                nextStep,
+              ].join("\n"),
             },
           ],
         },
@@ -290,24 +340,32 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
   if (linearId) {
     results.linear = await linearComment(
       linearId,
-      [
-        `## Cursor SDK ${kindLabel.toLowerCase()} (${record.status})`,
-        "",
-        record.agentUrl ? `- Agent: ${record.agentUrl}` : record.agentId ? `- Agent: \`${record.agentId}\`` : "- Agent: dry-run",
-        `- Workflow run: \`${record.runId}\``,
-        evalLine ? `- ${evalLine.replace(/\*/g, "**")}` : "",
-        ...(record.prUrls?.length ? ["", "### PRs", ...record.prUrls.map((u) => `- ${u}`)] : []),
-        ...(record.previewUrls?.length ? ["", "### Previews", ...record.previewUrls.map((u) => `- ${u}`)] : []),
-        "",
-        "### Summary",
-        blurb,
-        "",
-        record.kind === "implement"
-          ? "Await human merge after BugBot + CI. Slack is attention, not auto-deploy."
-          : "Await human approval before implement / PR. Prefer reviewing the agent link over this comment.",
-      ]
-        .filter(Boolean)
-        .join("\n"),
+      scrubPii(
+        [
+          `## Cursor SDK ${kindLabel.toLowerCase()} (${record.status})`,
+          "",
+          record.agentUrl ? `- Agent: ${record.agentUrl}` : record.agentId ? `- Agent: \`${record.agentId}\`` : "- Agent: dry-run",
+          `- Workflow run: \`${record.runId}\``,
+          evalLine ? `- ${evalLine.replace(/\*/g, "**")}` : "",
+          `- Eval dashboard: ${evalsPage}`,
+          `- Workflow status: ${statusPage}`,
+          config.requireFormalApproval && record.kind === "plan" && record.status !== "failed"
+            ? `- Formal write-gate: comment \`/approve\` (or Slack **Approve implement**), then move to **In Review**`
+            : "",
+          ...(record.prUrls?.length ? ["", "### PRs", ...record.prUrls.map((u) => `- ${u}`)] : []),
+          ...(record.previewUrls?.length ? ["", "### Previews", ...record.previewUrls.map((u) => `- ${u}`)] : []),
+          "",
+          "### Summary",
+          blurb,
+          evalChecklistMd ? ["", evalChecklistMd].join("\n") : "",
+          "",
+          record.kind === "implement"
+            ? "Await human merge after BugBot + CI. Slack is attention, not auto-deploy."
+            : "Await formal approval before implement / PR. Prefer reviewing the agent link over this comment.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      ),
     );
   }
 

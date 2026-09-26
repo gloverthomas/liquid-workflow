@@ -19,10 +19,8 @@ export type GitHubPullRequestPayload = {
 const ISSUE_RE = /\b(LIQ-\d+)\b/i;
 
 export function verifyGitHubSignature(rawBody: string, signatureHeader: string | undefined): boolean {
-  if (!config.githubWebhookSecret) {
-    // Demo: allow unsigned when secret empty (tunnel loopback only).
-    return true;
-  }
+  // Public tunnel: without a secret we cannot tell a real webhook from anyone else, so refuse.
+  if (!config.githubWebhookSecret) return false;
   if (!signatureHeader?.startsWith("sha256=")) return false;
   const digest = createHmac("sha256", config.githubWebhookSecret).update(rawBody).digest("hex");
   const expected = Buffer.from(`sha256=${digest}`, "utf8");

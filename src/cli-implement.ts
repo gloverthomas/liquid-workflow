@@ -2,15 +2,21 @@
 /**
  * Human write-gate helper: after plan review, implement + open PRs.
  *
- *   npm run implement                 # defaults to LIQ-17
- *   npm run implement -- LIQ-17
+ *   npm run implement                 # defaults to LIQ-24
+ *   npm run implement -- LIQ-24
  *   ISSUE=LIQ-16 npm run implement
  */
 
 const base = process.env.WORKFLOW_URL ?? "http://127.0.0.1:4100";
-const argId = (process.argv[2] || process.env.ISSUE || "LIQ-17").toUpperCase();
+const argId = (process.argv[2] || process.env.ISSUE || "LIQ-24").toUpperCase();
 
 const catalog = {
+  "LIQ-24": {
+    id: "eff0aee0-f93d-4ecf-9548-6f1ea5a4ea3f",
+    identifier: "LIQ-24",
+    title: "[Hero] AI Assistant works in Core but is dead in Reporting",
+    url: "https://linear.app/liquid-accounting/issue/LIQ-24",
+  },
   "LIQ-17": {
     id: "13058e52-b25d-46fe-a1d8-8587667350ec",
     identifier: "LIQ-17",
@@ -38,7 +44,7 @@ const catalog = {
 };
 
 async function main() {
-  const issue = catalog[argId];
+  const issue = catalog[argId as keyof typeof catalog];
   if (!issue) {
     console.error(`Unknown issue ${argId}. Known: ${Object.keys(catalog).join(", ")}`);
     process.exit(1);

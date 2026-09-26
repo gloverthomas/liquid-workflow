@@ -1,13 +1,16 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Agent } from "@cursor/sdk";
 import { buildSpecialistAgents } from "./agents.js";
 import { config } from "./config.js";
 import { evaluateRun, latestEvalForIssue, type EvalReport } from "./eval/harness.js";
+import { checkMainCiGreen, formatCiGateError } from "./github-checks.js";
+import { formalApprovalBlockReason } from "./write-gate.js";
 import { describeRoster } from "./models.js";
 import { buildLiq15ImplementPrompt, buildLiq15PlanPrompt, isLiq15 } from "./prompts/liq-15.js";
 import { buildLiq16ImplementPrompt, buildLiq16PlanPrompt, isLiq16 } from "./prompts/liq-16.js";
 import { buildLiq17ImplementPrompt, buildLiq17PlanPrompt, isLiq17 } from "./prompts/liq-17.js";
+import { buildLiq24ImplementPrompt, buildLiq24PlanPrompt, isLiq24 } from "./prompts/liq-24.js";
 import { buildImplementPrompt, buildPlanPrompt, type TriggerIssue } from "./prompts/liq-9.js";
 import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "./guardrails.js";
 
@@ -51,6 +54,48 @@ export function getRun(runId: string) {
 
 export function listRuns() {
   return [...runs.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+const MAX_HYDRATED_RUNS = 500;
+
+/** Reload saved run records so history (and eval tracking) survives restarts. */
+export function hydrateRunsFromDisk(dir = join(process.cwd(), "runs")): number {
+  if (!existsSync(dir)) return 0;
+  const files = readdirSync(dir)
+    .filter((f) => f.startsWith("run_") && f.endsWith(".json"))
+    .sort()
+    .slice(-MAX_HYDRATED_RUNS);
+  let loaded = 0;
+  for (const file of files) {
+    try {
+      const record = JSON.parse(readFileSync(join(dir, file), "utf8")) as PlanRunRecord;
+      if (record.runId && !runs.has(record.runId)) {
+        runs.set(record.runId, record);
+        loaded += 1;
+      }
+    } catch {
+      /* skip unreadable artifacts */
+    }
+  }
+  return loaded;
+}
+
+/** Compact run for list endpoints: no plan text or prompts, just what a dashboard needs. */
+export function summarizeRun(record: PlanRunRecord) {
+  return {
+    runId: record.runId,
+    kind: record.kind ?? "plan",
+    status: record.status,
+    issue: { identifier: record.issue.identifier, title: record.issue.title, url: record.issue.url },
+    startedAt: record.startedAt,
+    finishedAt: record.finishedAt ?? null,
+    dryRun: record.dryRun,
+    agentUrl: record.agentUrl ?? null,
+    prUrls: record.prUrls ?? [],
+    summary: record.summary ? record.summary.slice(0, 280) : null,
+    error: record.error ? record.error.slice(0, 200) : null,
+    eval: record.eval ? { passed: record.eval.passed, failed: record.eval.checks.filter((c) => !c.passed).map((c) => c.id) } : null,
+  };
 }
 
 function collectAssistantText(events: AsyncIterable<unknown>): Promise<string> {
@@ -190,7 +235,9 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const prompt = isLiq17(issue)
+    const prompt = isLiq24(issue)
+      ? buildLiq24PlanPrompt(issue, rosterBlock)
+      : isLiq17(issue)
       ? buildLiq17PlanPrompt(issue, rosterBlock)
       : isLiq16(issue)
         ? buildLiq16PlanPrompt(issue, rosterBlock)
@@ -225,8 +272,26 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
 /** Human write-gate passed: implement bounded fix and open PRs. */
 export async function startImplementRun(
   issue: TriggerIssue,
-  options: { bypassEval?: boolean } = {},
+  options: { bypassEval?: boolean; bypassWriteGate?: boolean; bypassCiGate?: boolean } = {},
 ): Promise<PlanRunRecord> {
+  if (!options.bypassWriteGate) {
+    const writeGate = formalApprovalBlockReason(issue.identifier);
+    if (writeGate) {
+      const blocked: PlanRunRecord = {
+        runId: newRunId(),
+        issue,
+        kind: "implement",
+        status: "failed",
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        dryRun: config.dryRun,
+        error: writeGate,
+      };
+      persist(blocked);
+      return blocked;
+    }
+  }
+
   const enforceEval = config.evalGate && !options.bypassEval;
   if (enforceEval) {
     const prior = latestEvalForIssue(issue.identifier, "plan");
@@ -255,6 +320,24 @@ export async function startImplementRun(
         dryRun: config.dryRun,
         error: `EVAL_GATE: plan eval ${prior.evalId} failed. Fix plan findings before /implement.`,
         eval: prior,
+      };
+      persist(blocked);
+      return blocked;
+    }
+  }
+
+  if (config.ciGate && !options.bypassCiGate) {
+    const ci = await checkMainCiGreen();
+    if (!ci.ok) {
+      const blocked: PlanRunRecord = {
+        runId: newRunId(),
+        issue,
+        kind: "implement",
+        status: "failed",
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        dryRun: config.dryRun,
+        error: formatCiGateError(ci),
       };
       persist(blocked);
       return blocked;
@@ -331,7 +414,9 @@ export async function startImplementRun(
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const promptBase = isLiq17(issue)
+    const promptBase = isLiq24(issue)
+      ? buildLiq24ImplementPrompt(issue, rosterBlock)
+      : isLiq17(issue)
       ? buildLiq17ImplementPrompt(issue, rosterBlock)
       : isLiq16(issue)
         ? buildLiq16ImplementPrompt(issue, rosterBlock)

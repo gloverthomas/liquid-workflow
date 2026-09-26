@@ -2,7 +2,7 @@
   "name": "liquid-workflow",
   "version": "0.1.0",
   "private": true,
-  "description": "Liquid governed workflow: Linear trigger → Cursor SDK planner across Core + Reporting",
+  "description": "Liquid governed workflow: Linear trigger \u2192 Cursor SDK planner across Core + Reporting",
   "type": "module",
   "engines": {
     "node": ">=22.13"
@@ -14,7 +14,10 @@
     "implement": "tsx src/cli-implement.ts",
     "eval": "tsx src/cli-eval.ts",
     "models": "tsx src/cli-models.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tunnel:ha:install": "bash scripts/install-tunnel-ha.sh",
+    "tunnel:ha:uninstall": "bash scripts/uninstall-tunnel-ha.sh",
+    "test": "tsx --test src/access.test.ts"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.32"

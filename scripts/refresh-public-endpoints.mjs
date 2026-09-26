@@ -48,6 +48,54 @@ const secretMatch = existsSync(envPath)
   : null;
 const secret = secretMatch?.[1]?.trim() ?? "";
 
+const linearKeyMatch = existsSync(envPath)
+  ? readFileSync(envPath, "utf8").match(/^LINEAR_API_KEY=(.*)$/m)
+  : null;
+const linearKey = linearKeyMatch?.[1]?.trim() ?? "";
+
+if (linearKey) {
+  try {
+    const tmp = resolve(root, ".tmp-linear-webhook-update.py");
+    writeFileSync(
+      tmp,
+      `
+import json, urllib.request
+KEY = ${JSON.stringify(linearKey)}
+URL = ${JSON.stringify(linearUrl)}
+
+def gql(query, variables=None):
+    body = {"query": query}
+    if variables is not None:
+        body["variables"] = variables
+    req = urllib.request.Request(
+        "https://api.linear.app/graphql",
+        data=json.dumps(body).encode(),
+        headers={"Authorization": KEY, "Content-Type": "application/json"},
+        method="POST",
+    )
+    return json.load(urllib.request.urlopen(req, timeout=30))
+
+nodes = gql("{ webhooks { nodes { id url } } }")["data"]["webhooks"]["nodes"]
+if not nodes:
+    print("No Linear webhooks found — create one pointing at", URL)
+else:
+    for n in nodes:
+        out = gql(
+            "mutation($id:String!,$input:WebhookUpdateInput!){ webhookUpdate(id:$id,input:$input){ success webhook{ id url enabled } } }",
+            {"id": n["id"], "input": {"url": URL, "enabled": True}},
+        )
+        print(json.dumps(out))
+`,
+    );
+    console.log(execSync(`python3 "${tmp}"`, { encoding: "utf8" }));
+    console.log(`patched Linear webhook(s) → ${linearUrl}`);
+  } catch (error) {
+    console.warn("Linear webhook update skipped:", error instanceof Error ? error.message : error);
+  }
+} else {
+  console.warn("LINEAR_API_KEY missing — skip Linear webhook URL update. Target:", linearUrl);
+}
+
 for (const repo of [
   "gloverthomas/liquid-accounting-reporting",
   "gloverthomas/liquid-accounting-core",
