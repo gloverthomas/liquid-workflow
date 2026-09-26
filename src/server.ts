@@ -9,10 +9,16 @@ import {
   routeLinearCommentApproval,
   type LinearWebhookPayload,
 } from "./linear-webhook.js";
+import { parseBugbotReviewNotification, type GitHubBugbotWebhookPayload } from "./bugbot-links.js";
 import { shouldCloseFromMerge, verifyGitHubSignature, type GitHubPullRequestPayload } from "./github-webhook.js";
 import { markIssueDone } from "./linear-done.js";
 import { createProductSignalIssue } from "./linear-client.js";
-import { notifyPlanComplete, notifySignalReceived, LINEAR_ISSUE_UUID } from "./notify.js";
+import {
+  notifyBugbotReview,
+  notifyPlanComplete,
+  notifySignalReceived,
+  LINEAR_ISSUE_UUID,
+} from "./notify.js";
 import { alertOps } from "./ops-alert.js";
 import {
   alreadyProcessed,
@@ -751,13 +757,33 @@ const server = createServer(async (req, res) => {
 
       const event = req.headers["x-github-event"];
       const eventName = Array.isArray(event) ? event[0] : event;
-      if (eventName !== "pull_request") {
-        markProcessed(deliveryId, "ignored:not_pull_request");
-        sendJson(res, 200, { ignored: true, reason: "not_pull_request" });
+      const payload = JSON.parse(raw) as GitHubPullRequestPayload & GitHubBugbotWebhookPayload;
+
+      const bugbot = parseBugbotReviewNotification(eventName ?? "", payload);
+      if (bugbot) {
+        try {
+          const notify = await notifyBugbotReview(bugbot);
+          markProcessed(deliveryId, "bugbot:slack");
+          sendJson(res, 200, { notified: true, deliveryId, ...notify });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          deadLetter({ kind: "bugbot_slack", deliveryId, error: message });
+          await alertOps({
+            title: "Bugbot Slack notify failed",
+            event: "bugbot_slack_failed",
+            fields: { deliveryId, pr: bugbot.prUrl, error: message },
+          });
+          sendJson(res, 500, { error: "bugbot_notify_failed", message });
+        }
         return;
       }
 
-      const payload = JSON.parse(raw) as GitHubPullRequestPayload;
+      if (eventName !== "pull_request") {
+        markProcessed(deliveryId, `ignored:${eventName ?? "unknown"}`);
+        sendJson(res, 200, { ignored: true, reason: "unsupported_event" });
+        return;
+      }
+
       const close = shouldCloseFromMerge(payload);
       if (!close) {
         markProcessed(deliveryId, "ignored");

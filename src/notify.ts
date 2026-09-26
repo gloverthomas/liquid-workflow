@@ -2,6 +2,11 @@ import { config } from "./config.js";
 import type { PlanRunRecord } from "./sdk-planner.js";
 import type { TriggerIssue } from "./prompts/liq-9.js";
 import { formatEvalChecklistMarkdown, formatEvalChecklistSlack } from "./eval/harness.js";
+import {
+  buildBugbotSlackActionElements,
+  sanitizeBugbotBodyForSlack,
+  type BugbotReviewNotification,
+} from "./bugbot-links.js";
 import { scrubPii } from "./pii.js";
 import { latestValidApproval } from "./write-gate.js";
 
@@ -118,6 +123,44 @@ async function ensureAssignee(issueId: string): Promise<void> {
       },
     }),
   });
+}
+
+export async function notifyBugbotReview(
+  args: BugbotReviewNotification,
+): Promise<{ slack?: string }> {
+  const results: { slack?: string } = {};
+  if (!config.slackWebhookUrl) return results;
+
+  const mention = slackMention();
+  const blurb = scrubPii(sanitizeBugbotBodyForSlack(args.body));
+  const actionElements = buildBugbotSlackActionElements({
+    body: args.body,
+    prUrl: args.prUrl,
+  });
+
+  results.slack = await postSlack({
+    text: `${mention}Bugbot review — ${args.prTitle}`,
+    blocks: [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: `Bugbot · ${args.prTitle}`,
+          emoji: true,
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: [mention ? mention.trim() : null, blurb || "_No review text_"].filter(Boolean).join("\n"),
+        },
+      },
+      ...(actionElements.length ? [{ type: "actions", elements: actionElements }] : []),
+    ],
+  });
+
+  return results;
 }
 
 export async function notifySignalReceived(args: {
