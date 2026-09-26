@@ -4,7 +4,7 @@ Governed agent-execution layer for the Liquid × Cursor demo.
 
 **Trigger** → **Cursor SDK planner** (both repos) + **specialist subagents** (security / quality) with **per-role model routing** → **deterministic eval** → human write-gate → **implement / PR**.
 
-This is intentionally a thin demo BFF: loopback-only, development/test only, secrets via env, no production auth invention.
+It binds to loopback and runs in development/test only, but it is reachable from the internet through the `workflow.liquid-accounting.world` tunnel, so every control-plane route requires a token (see [decision 0006](docs/decisions/0006-control-plane-access.md)). **Why** it works this way: [`docs/decisions/`](docs/decisions/README.md).
 
 ## Why this exists
 
@@ -76,7 +76,7 @@ npm run eval
 npm run implement   # only after eval pass + human review
 ```
 
-Endpoints (loopback):
+Endpoints. Public: `GET /health`, `/status`, `/`, `/evals`, `POST /signal`, signed `POST /webhooks/*`. Everything else needs `Authorization: Bearer $WORKFLOW_API_TOKEN`; `/approve` also accepts `APPROVE_TOKEN`:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -106,7 +106,7 @@ Filter Cursor Agents UI → Source → **SDK** to see the run (and nested specia
 
 1. Linear → Settings → API → Webhooks → URL `https://<tunnel>/webhooks/linear`
 2. For local demos, use `npm run trigger` instead of exposing the tunnel.
-3. Set `LINEAR_WEBHOOK_SECRET` to verify signatures (unsigned accepted only when secret is empty — loopback demo only).
+3. Set `LINEAR_WEBHOOK_SECRET`. It is **required**: without it, deliveries are refused (the service is internet-reachable through the tunnel).
 
 Trigger filter defaults: state **In Progress**, hero issues **LIQ-16 / LIQ-15 / LIQ-9**.
 
@@ -121,7 +121,7 @@ Setup (per repo or org):
 
 1. GitHub → Settings → Webhooks → URL `https://<tunnel>/webhooks/github`
 2. Content type `application/json`, events: **Pull requests**
-3. Optional secret → `GITHUB_WEBHOOK_SECRET` (unsigned accepted only when empty — demo only)
+3. Secret → `GITHUB_WEBHOOK_SECRET`. **Required**: without it, deliveries are refused.
 
 ## Visual proof on PRs
 
@@ -133,7 +133,7 @@ Implement agents must attach screenshots (`docs/pr-proof/` + PR body). Playwrigh
 | --- | --- | --- |
 | Product miss | Reporting | `/signal` → Slack + Linear **Todo** (assigned). **No SDK plan yet.** |
 | Triage | Linear / Slack | Human moves → **In Progress** → webhook → Cursor SDK **plan** |
-| Approve | Linear | Human moves → **In Review** → webhook → Cursor SDK **implement** / PRs (eval bypass; human is the gate) |
+| Approve | Linear / Slack / Insights | Human records an approval, moves → **In Review** → webhook → Cursor SDK **implement** / PRs (eval must have passed) |
 | Ship | GitHub | Human merges → webhook → Linear **Done** |
 
 Refresh ephemeral tunnel URLs:
