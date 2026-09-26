@@ -11,6 +11,7 @@ import {
 } from "./linear-webhook.js";
 import { shouldCloseFromMerge, verifyGitHubSignature, type GitHubPullRequestPayload } from "./github-webhook.js";
 import { markIssueDone } from "./linear-done.js";
+import { createProductSignalIssue } from "./linear-client.js";
 import { notifyPlanComplete, notifySignalReceived, LINEAR_ISSUE_UUID } from "./notify.js";
 import { alertOps } from "./ops-alert.js";
 import {
@@ -306,17 +307,53 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
       })
     : {};
 
-  const issue = parseIssue({
-    identifier: body.issueIdentifier ?? "LIQ-24",
-    title: body.title,
-    stateName: "Todo",
-  });
+  let issue: TriggerIssue;
+
+  const explicitId = body.issueIdentifier?.trim().toUpperCase();
+  if (explicitId) {
+    issue = parseIssue({
+      identifier: explicitId,
+      title: body.title,
+      stateName: "Todo",
+    });
+  } else {
+    if (!config.linearApiKey) {
+      sendJson(res, 503, { error: "linear_api_key_required_for_signal_create" });
+      return;
+    }
+    try {
+      const created = await createProductSignalIssue({
+        title: body.title?.trim() || "Product signal triage",
+        source: body.source,
+        hash: body.hash,
+        reportingUrl: body.reportingUrl ?? body.url,
+      });
+      issue = {
+        id: created.id,
+        identifier: created.identifier,
+        title: created.title,
+        description: created.description,
+        url: created.url,
+        stateName: "Todo",
+      };
+    } catch (error) {
+      log("error", "signal_create_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      sendJson(res, 502, {
+        error: "linear_create_failed",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+  }
 
   log("info", "signal_received", {
     issue: issue.identifier,
     source: body.source,
     hash: body.hash,
     mode: "triage_only",
+    created: !explicitId,
   });
   accessLog({
     route: "/signal",
@@ -336,6 +373,11 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
     accepted: true,
     queued: false,
     triage: true,
+    issue: {
+      identifier: issue.identifier,
+      title: issue.title,
+      url: issue.url,
+    },
     signal: {
       source: body.source,
       hash: body.hash,

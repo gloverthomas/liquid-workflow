@@ -14,16 +14,22 @@ export const HUMAN_WRITE_GATE = `
 `.trim();
 
 /** Visual proof required on UI PRs — manual, Playwright CI, and agent. */
-export const VISUAL_PROOF_GATE = `
+export const VISUAL_PROOF_GATE = visualProofGate("LIQ-XX");
+
+export function visualProofGate(issueIdentifier: string): string {
+  const slug = issueIdentifier.trim().toLowerCase();
+  const proofFile = `e2e/proof/${slug}-fix.png`;
+  return `
 ## Visual proof (required for UI fixes) — runtime over vibes
-1. Drive the real UI path from the Liquid feature map (bell / Help / hash) — not a guessed route.
+1. Drive the real UI path from the Liquid feature map for **${issueIdentifier.toUpperCase()}** — not a guessed route.
 2. Capture before/after screenshots of that path.
-3. Commit PNGs under \`docs/pr-proof/\` (e.g. \`liq-17-reporting-notifications-open.png\`).
+3. Commit PNGs under \`docs/pr-proof/\` (e.g. \`${slug}-fix.png\`).
 4. Embed them in the PR description Screenshots table (see \`.github/pull_request_template.md\`).
-5. Ensure Playwright proof tests write to \`e2e/proof/\` so CI uploads the \`*-proof\` artifact.
+5. Ensure Playwright proof tests write **${proofFile}** (CI uploads the \`*-proof\` artifact). Do **not** reuse another ticket's screenshots (e.g. \`liq-9-*\` when fixing ${slug}).
 6. Include the Vercel preview URL in the PR body.
 7. Name the CI jobs that must go green before merge (\`assistant-unit\` / \`parity-proof\` / \`help-proof\` / \`smoke\`).
 `.trim();
+}
 
 export const PLAN_THEN_GATE = `
 ## After planning

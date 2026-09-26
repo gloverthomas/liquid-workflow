@@ -1,5 +1,5 @@
 import type { TriggerIssue } from "./liq-9.js";
-import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "../guardrails.js";
+import { HUMAN_WRITE_GATE, visualProofGate } from "../guardrails.js";
 import { LIQUID_FEATURE_MAP } from "../feature-map.js";
 
 export function isLiq17(issue: TriggerIssue) {
@@ -61,5 +61,5 @@ ${LIQUID_FEATURE_MAP}
 
 ${HUMAN_WRITE_GATE}
 
-${VISUAL_PROOF_GATE}`;
+${visualProofGate(issue.identifier)}`;
 }

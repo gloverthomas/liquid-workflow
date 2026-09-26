@@ -126,7 +126,10 @@ export async function notifySignalReceived(args: {
   hash?: string;
 }): Promise<{ slack?: string; linear?: string }> {
   const results: { slack?: string; linear?: string } = {};
-  const linearId = LINEAR_ISSUE_UUID[args.issue.identifier.toUpperCase()];
+  const linearId =
+    args.issue.id && args.issue.id !== "manual" && args.issue.id !== "signal"
+      ? args.issue.id
+      : LINEAR_ISSUE_UUID[args.issue.identifier.toUpperCase()];
   const linearUrl = issueLinearUrl(args.issue);
   const mention = slackMention();
 

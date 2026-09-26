@@ -11,8 +11,10 @@ import { buildLiq15ImplementPrompt, buildLiq15PlanPrompt, isLiq15 } from "./prom
 import { buildLiq16ImplementPrompt, buildLiq16PlanPrompt, isLiq16 } from "./prompts/liq-16.js";
 import { buildLiq17ImplementPrompt, buildLiq17PlanPrompt, isLiq17 } from "./prompts/liq-17.js";
 import { buildLiq24ImplementPrompt, buildLiq24PlanPrompt, isLiq24 } from "./prompts/liq-24.js";
+import { buildDynamicImplementPrompt, buildDynamicPlanPrompt } from "./prompts/dynamic-ticket.js";
 import { buildImplementPrompt, buildPlanPrompt, type TriggerIssue } from "./prompts/liq-9.js";
-import { HUMAN_WRITE_GATE, VISUAL_PROOF_GATE } from "./guardrails.js";
+import { isHeroIssue } from "./hero-issues.js";
+import { HUMAN_WRITE_GATE, visualProofGate } from "./guardrails.js";
 
 export type PlanRunRecord = {
   runId: string;
@@ -135,6 +137,24 @@ function agentDeepLink(agentId?: string) {
   return agentId ? `https://cursor.com/agents/${agentId}` : undefined;
 }
 
+function buildPlanPromptForIssue(issue: TriggerIssue, rosterBlock: string): string {
+  if (isLiq24(issue)) return buildLiq24PlanPrompt(issue, rosterBlock);
+  if (isLiq17(issue)) return buildLiq17PlanPrompt(issue, rosterBlock);
+  if (isLiq16(issue)) return buildLiq16PlanPrompt(issue, rosterBlock);
+  if (isLiq15(issue)) return buildLiq15PlanPrompt(issue, rosterBlock);
+  if (isHeroIssue(issue.identifier)) return buildPlanPrompt(issue, rosterBlock);
+  return buildDynamicPlanPrompt(issue, rosterBlock);
+}
+
+function buildImplementPromptForIssue(issue: TriggerIssue, rosterBlock: string): string {
+  if (isLiq24(issue)) return buildLiq24ImplementPrompt(issue, rosterBlock);
+  if (isLiq17(issue)) return buildLiq17ImplementPrompt(issue, rosterBlock);
+  if (isLiq16(issue)) return buildLiq16ImplementPrompt(issue, rosterBlock);
+  if (isLiq15(issue)) return buildLiq15ImplementPrompt(issue, rosterBlock);
+  if (isHeroIssue(issue.identifier)) return buildImplementPrompt(issue, rosterBlock);
+  return buildDynamicImplementPrompt(issue, rosterBlock);
+}
+
 function attachEval(record: PlanRunRecord) {
   record.eval = evaluateRun(record);
   persist(record);
@@ -235,15 +255,7 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const prompt = isLiq24(issue)
-      ? buildLiq24PlanPrompt(issue, rosterBlock)
-      : isLiq17(issue)
-      ? buildLiq17PlanPrompt(issue, rosterBlock)
-      : isLiq16(issue)
-        ? buildLiq16PlanPrompt(issue, rosterBlock)
-        : isLiq15(issue)
-          ? buildLiq15PlanPrompt(issue, rosterBlock)
-          : buildPlanPrompt(issue, rosterBlock);
+    const prompt = buildPlanPromptForIssue(issue, rosterBlock);
     const run = await agent.send(prompt);
     const streamed = await collectAssistantText(run.stream());
     const waited = await run.wait();
@@ -414,17 +426,9 @@ export async function startImplementRun(
     record.agentUrl = agentDeepLink(agent.agentId);
     persist(record);
 
-    const promptBase = isLiq24(issue)
-      ? buildLiq24ImplementPrompt(issue, rosterBlock)
-      : isLiq17(issue)
-      ? buildLiq17ImplementPrompt(issue, rosterBlock)
-      : isLiq16(issue)
-        ? buildLiq16ImplementPrompt(issue, rosterBlock)
-        : isLiq15(issue)
-          ? buildLiq15ImplementPrompt(issue, rosterBlock)
-          : buildImplementPrompt(issue, rosterBlock);
+    const promptBase = buildImplementPromptForIssue(issue, rosterBlock);
     // Always restate write-gate at send-time so chat continuations inherit it.
-    const prompt = `${promptBase}\n\n${HUMAN_WRITE_GATE}\n\n${VISUAL_PROOF_GATE}`;
+    const prompt = `${promptBase}\n\n${HUMAN_WRITE_GATE}\n\n${visualProofGate(issue.identifier)}`;
     const run = await agent.send(prompt);
     const streamed = await collectAssistantText(run.stream());
     const waited = await run.wait();
