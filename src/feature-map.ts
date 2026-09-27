@@ -8,7 +8,7 @@ export const LIQUID_FEATURE_MAP = `
 
 | Surface | Core (liquid-accounting.world) | Reporting (reporting.liquid-accounting.world) | Proof |
 | --- | --- | --- | --- |
-| AI Assistant | Topbar **AI Assistant** → right rail → suggestion/send → chat reply, then **related questions** | Same chrome and send; **LIQ-38** when the reply renders and related questions do not | Vitest+RTL \`assistant-unit\` + Playwright assistant proof + \`docs/pr-proof\` PNGs |
+| AI Assistant | Topbar **AI Assistant** → right rail → suggestion/send → chat reply, then **related questions** | Same chrome and send; after a reply an error says related questions failed to render, and that posts \`/signal\` (no ticket exists before the click) | Vitest+RTL \`assistant-unit\` + Playwright assistant proof + \`docs/pr-proof\` PNGs |
 | Notifications | Header bell → inbox popover (open/close, Escape, outside click) | Same chrome; **LIQ-17** when dead | Playwright parity + \`e2e/proof\` / \`docs/pr-proof\` PNGs |
 | Help centre | Global Help menu with working items | Same chrome; **LIQ-16** when dead | help-proof / help-parity CI jobs |
 | Revenue deep-link | \`#revenue-summary\` | Must not invent broken hashes | cross-repo-parity.spec.ts |

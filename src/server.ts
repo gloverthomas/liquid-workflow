@@ -7,6 +7,7 @@ import {
   verifyLinearSignature,
   routeLinearWebhook,
   routeLinearCommentApproval,
+  isLinearApproveComment,
   type LinearWebhookPayload,
 } from "./linear-webhook.js";
 import { parseBugbotReviewNotification, type GitHubBugbotWebhookPayload } from "./bugbot-links.js";
@@ -18,7 +19,7 @@ import {
 } from "./github-webhook.js";
 import { markIssueDone } from "./linear-done.js";
 import { markIssueInReview } from "./linear-in-review.js";
-import { createProductSignalIssue } from "./linear-client.js";
+import { createProductSignalIssue, findIssueByIdentifier } from "./linear-client.js";
 import {
   notifyBugbotReview,
   notifyPlanComplete,
@@ -269,6 +270,7 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
         hash?: string;
         reportingUrl?: string;
         url?: string;
+        detail?: string;
       })
     : {};
 
@@ -292,6 +294,7 @@ async function handleSignal(req: IncomingMessage, res: ServerResponse) {
         source: body.source,
         hash: body.hash,
         reportingUrl: body.reportingUrl ?? body.url,
+        detail: body.detail,
       });
       issue = {
         id: created.id,
@@ -570,7 +573,31 @@ const server = createServer(async (req, res) => {
 
       const payload = JSON.parse(raw) as LinearWebhookPayload;
 
-      const commentApproval = routeLinearCommentApproval(payload);
+      let commentApproval = routeLinearCommentApproval(payload);
+      if (!commentApproval && isLinearApproveComment(payload)) {
+        const identifier = payload.data?.issue?.identifier?.trim() ?? "";
+        try {
+          const issue = await findIssueByIdentifier(identifier);
+          if (issue?.description) {
+            commentApproval = routeLinearCommentApproval({
+              ...payload,
+              data: {
+                ...payload.data,
+                issue: {
+                  ...payload.data?.issue,
+                  title: payload.data?.issue?.title || issue.title,
+                  description: issue.description,
+                },
+              },
+            });
+          }
+        } catch (error) {
+          log("warn", "approve_issue_lookup_failed", {
+            issue: identifier,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       if (commentApproval) {
         markProcessed(deliveryId, `approve:${commentApproval.approvalId}`);
         accessLog({
