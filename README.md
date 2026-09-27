@@ -110,9 +110,17 @@ Filter Cursor Agents UI → Source → **SDK** to see the run (and nested specia
 
 Trigger filter defaults: state **In Progress**, hero issues **LIQ-16 / LIQ-15 / LIQ-9**.
 
+## GitHub PR opened → Linear In Review
+
+When a PR into `main` is **opened** on Core or Reporting and the title, branch, or body mentions `LIQ-N`:
+
+1. `POST /webhooks/github` moves that Linear issue to **In Review** (if it is not already)
+2. Arms a short implement suppress so the status webhook does not start a duplicate implement run
+3. Posts a Linear comment. **Merge is unchanged** — humans still merge; merge moves the ticket to **Done**.
+
 ## GitHub merge → Linear Done
 
-When a PR into `main` is merged on Core or Reporting and the title/body/branch mentions `LIQ-N`:
+When a PR into `main` is merged on Core or Reporting and the title, branch, or body mentions `LIQ-N`:
 
 1. `POST /webhooks/github` moves that curated Linear issue to **Done**
 2. Posts a Slack brief + Linear comment

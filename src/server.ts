@@ -10,8 +10,14 @@ import {
   type LinearWebhookPayload,
 } from "./linear-webhook.js";
 import { parseBugbotReviewNotification, type GitHubBugbotWebhookPayload } from "./bugbot-links.js";
-import { shouldCloseFromMerge, verifyGitHubSignature, type GitHubPullRequestPayload } from "./github-webhook.js";
+import {
+  shouldCloseFromMerge,
+  shouldMoveToInReviewFromPrOpen,
+  verifyGitHubSignature,
+  type GitHubPullRequestPayload,
+} from "./github-webhook.js";
 import { markIssueDone } from "./linear-done.js";
+import { markIssueInReview } from "./linear-in-review.js";
 import { createProductSignalIssue } from "./linear-client.js";
 import {
   notifyBugbotReview,
@@ -24,6 +30,7 @@ import {
   alreadyProcessed,
   acquireIssueLock,
   deadLetter,
+  isImplementSuppressed,
   log,
   markProcessed,
   releaseIssueLock,
@@ -112,6 +119,7 @@ function healthPayload() {
     signalEnabled: config.signalEnabled,
     linearAutoEnabled: config.linearAutoEnabled,
     githubAutoDoneEnabled: config.githubAutoDoneEnabled,
+    githubAutoInReviewEnabled: config.githubAutoInReviewEnabled,
     implementBypassEvalOnLinear: config.implementBypassEvalOnLinear,
     host: config.host,
     port: config.port,
@@ -636,6 +644,20 @@ const server = createServer(async (req, res) => {
         return;
       }
 
+      if (routed.action === "implement" && isImplementSuppressed(routed.issue.identifier)) {
+        markProcessed(deliveryId, `suppressed:implement:${routed.issue.identifier}`);
+        log("info", "linear_implement_suppressed", {
+          issue: routed.issue.identifier,
+          deliveryId,
+        });
+        sendJson(res, 200, {
+          skipped: true,
+          reason: "implement_suppressed",
+          issue: routed.issue.identifier,
+        });
+        return;
+      }
+
       accessLog({
         route: "/webhooks/linear",
         action: routed.action,
@@ -732,7 +754,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/webhooks/github") {
-      if (!config.workflowEnabled || !config.githubAutoDoneEnabled) {
+      if (!config.workflowEnabled) {
         log("warn", "github_webhook_rejected_kill_switch");
         sendJson(res, 503, { error: "workflow_disabled" });
         return;
@@ -784,35 +806,72 @@ const server = createServer(async (req, res) => {
         return;
       }
 
+      const inReview = shouldMoveToInReviewFromPrOpen(payload);
+      if (inReview && config.githubAutoInReviewEnabled) {
+        const lockKey = `inReview:${inReview.identifier}`;
+        if (!acquireIssueLock(lockKey, deliveryId)) {
+          sendJson(res, 200, { skipped: true, reason: "inflight", issue: inReview.identifier });
+          return;
+        }
+
+        try {
+          const result = await markIssueInReview(inReview);
+          markProcessed(deliveryId, `inReview:${inReview.identifier}`);
+          sendJson(res, 200, { inReview: true, deliveryId, ...result });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          deadLetter({
+            kind: "github_in_review",
+            issue: inReview.identifier,
+            deliveryId,
+            error: message,
+          });
+          await alertOps({
+            title: `PR open→In Review failed — ${inReview.identifier}`,
+            event: "github_in_review_failed",
+            fields: {
+              issue: inReview.identifier,
+              deliveryId,
+              error: message,
+              pr: inReview.prUrl,
+            },
+          });
+          sendJson(res, 500, { error: "in_review_failed", message });
+        } finally {
+          releaseIssueLock(lockKey);
+        }
+        return;
+      }
+
       const close = shouldCloseFromMerge(payload);
-      if (!close) {
-        markProcessed(deliveryId, "ignored");
-        sendJson(res, 200, { ignored: true });
+      if (close && config.githubAutoDoneEnabled) {
+        const lockKey = `done:${close.identifier}`;
+        if (!acquireIssueLock(lockKey, deliveryId)) {
+          sendJson(res, 200, { skipped: true, reason: "inflight", issue: close.identifier });
+          return;
+        }
+
+        try {
+          const result = await markIssueDone(close);
+          markProcessed(deliveryId, `done:${close.identifier}`);
+          sendJson(res, 200, { closed: true, deliveryId, ...result });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          deadLetter({ kind: "github_done", issue: close.identifier, deliveryId, error: message });
+          await alertOps({
+            title: `Merge→Done failed — ${close.identifier}`,
+            event: "github_done_failed",
+            fields: { issue: close.identifier, deliveryId, error: message, pr: close.prUrl },
+          });
+          sendJson(res, 500, { error: "done_failed", message });
+        } finally {
+          releaseIssueLock(lockKey);
+        }
         return;
       }
 
-      const lockKey = `done:${close.identifier}`;
-      if (!acquireIssueLock(lockKey, deliveryId)) {
-        sendJson(res, 200, { skipped: true, reason: "inflight", issue: close.identifier });
-        return;
-      }
-
-      try {
-        const result = await markIssueDone(close);
-        markProcessed(deliveryId, `done:${close.identifier}`);
-        sendJson(res, 200, { closed: true, deliveryId, ...result });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        deadLetter({ kind: "github_done", issue: close.identifier, deliveryId, error: message });
-        await alertOps({
-          title: `Merge→Done failed — ${close.identifier}`,
-          event: "github_done_failed",
-          fields: { issue: close.identifier, deliveryId, error: message, pr: close.prUrl },
-        });
-        sendJson(res, 500, { error: "done_failed", message });
-      } finally {
-        releaseIssueLock(lockKey);
-      }
+      markProcessed(deliveryId, "ignored");
+      sendJson(res, 200, { ignored: true });
       return;
     }
 
