@@ -95,9 +95,11 @@ export async function createProductSignalIssue(args: {
   source?: string;
   hash?: string;
   reportingUrl?: string;
+  detail?: string;
 }): Promise<LinearIssueRef> {
   const todoStateId = (process.env.LINEAR_TODO_STATE_ID ?? DEFAULT_TODO_STATE_ID).trim();
   const title = args.title.trim() || "Product signal triage";
+  const detail = args.detail?.trim();
   const description = [
     "## Product signal received",
     "",
@@ -106,6 +108,8 @@ export async function createProductSignalIssue(args: {
     args.source ? `- Source: \`${args.source}\`` : null,
     args.hash ? `- Seam: \`${args.hash}\`` : null,
     args.reportingUrl ? `- URL: ${args.reportingUrl}` : null,
+    detail ? "" : null,
+    detail || null,
     "",
     "Assigned for triage (**Todo**). Move to **In Progress** to start the Cursor SDK plan.",
   ]

@@ -15,7 +15,7 @@ export type LinearWebhookPayload = {
     body?: string;
     description?: string;
     issueId?: string;
-    issue?: { id?: string; identifier?: string; title?: string; url?: string };
+    issue?: { id?: string; identifier?: string; title?: string; url?: string; description?: string };
     state?: { name?: string; type?: string };
     user?: { name?: string; email?: string; id?: string };
   };
@@ -75,22 +75,28 @@ export function routeLinearWebhook(
   return null;
 }
 
+export function isLinearApproveComment(payload: LinearWebhookPayload): boolean {
+  if (payload.type !== "Comment") return false;
+  if (payload.action !== "create") return false;
+  if (!parseApproveCommand(payload.data?.body)) return false;
+  return Boolean(payload.data?.issue?.identifier?.trim());
+}
+
 /**
  * Linear Comment create containing `/approve` → formal write-gate approval.
  * Returns the approval issue identifier when handled.
+ * Description counts: signal-created tickets are eligible because the body says "product signal".
  */
 export function routeLinearCommentApproval(
   payload: LinearWebhookPayload,
 ): { issueId: string; actor: string; approvalId: string } | null {
-  if (payload.type !== "Comment") return null;
-  if (payload.action !== "create") return null;
-  if (!parseApproveCommand(payload.data?.body)) return null;
+  if (!isLinearApproveComment(payload)) return null;
 
-  const issueUuid = payload.data?.issueId ?? payload.data?.issue?.id ?? "";
   const identifier = payload.data?.issue?.identifier?.trim().toUpperCase() ?? "";
   const title = payload.data?.issue?.title?.trim() ?? "";
+  const description = payload.data?.issue?.description ?? payload.data?.description;
   if (!identifier) return null;
-  if (!isWorkflowEligible(identifier, title)) return null;
+  if (!isWorkflowEligible(identifier, title, description)) return null;
 
   const actor =
     payload.data?.user?.name ||
