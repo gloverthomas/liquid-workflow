@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildPrOpenedSlackPayload, shouldOfferApproveImplement } from "./notify.js";
+import { buildPrOpenedSlackPayload, linearPlanGuidance, shouldOfferApproveImplement } from "./notify.js";
 
 test("PR-open Slack tells you to review, then merge", () => {
   const payload = buildPrOpenedSlackPayload({
@@ -23,6 +23,20 @@ test("PR-open Slack tells you to review, then merge", () => {
   const labels = (actions?.elements ?? []).map((element) => element.text?.text);
   assert.deepEqual(labels, ["Open PR", "Open Linear"]);
   assert.equal(actions?.elements?.[0]?.url, "https://github.com/gloverthomas/liquid-accounting-reporting/pull/32");
+});
+
+test("failed eval tells Linear to re-plan", () => {
+  const guidance = linearPlanGuidance({
+    kind: "plan",
+    status: "completed",
+    evalPassed: false,
+    requireFormalApproval: true,
+    hasApproval: false,
+  });
+  assert.match(guidance.writeGateLine, /re-plan/);
+  assert.match(guidance.writeGateLine, /Do not use \*\*Approve implement\*\*/);
+  assert.doesNotMatch(guidance.writeGateLine, /Formal write-gate/);
+  assert.doesNotMatch(guidance.closing, /Await formal approval/);
 });
 
 test("failed eval does not offer Approve implement", () => {
