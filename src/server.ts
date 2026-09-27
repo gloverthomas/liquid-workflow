@@ -154,6 +154,7 @@ function renderStatusPage(): string {
         ${flag(h.workflowEnabled, "Workflow", "Master kill switch for signal / Linear / GitHub→Done")}
         ${flag(h.signalEnabled, "Signal", "Product Help→/signal triage")}
         ${flag(h.linearAutoEnabled, "Linear auto", "In Progress → plan, In Review → implement")}
+        ${flag(h.githubAutoInReviewEnabled, "GitHub → In Review", "PR opened syncs Linear In Review")}
         ${flag(h.githubAutoDoneEnabled, "GitHub → Done", "Merge closes curated Linear issues")}
         ${flag(h.evalGate, "Eval gate", "Implement requires a passing plan eval")}
         ${flag(h.ciGate, "CI gate", "Main branch checks must be green")}
