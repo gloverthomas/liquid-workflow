@@ -116,7 +116,10 @@ When a PR into `main` is **opened** on Core or Reporting and the title, branch, 
 
 1. `POST /webhooks/github` moves that Linear issue to **In Review** (if it is not already)
 2. Arms a short implement suppress so the status webhook does not start a duplicate implement run
-3. Posts a Linear comment. **Merge is unchanged** — humans still merge; merge moves the ticket to **Done**.
+3. Posts a Linear comment when the state changes
+4. Posts a Slack brief either way: the PR is open, review BugBot / CI / preview, then you merge
+
+**Merge is unchanged** — humans still merge; merge moves the ticket to **Done** and posts the Done Slack.
 
 ## GitHub merge → Linear Done
 

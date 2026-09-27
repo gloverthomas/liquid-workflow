@@ -72,6 +72,81 @@ function slackMention(): string {
   return id ? `<@${id}> ` : "";
 }
 
+/** Approve is the next action only after a plan that passed eval. A failed plan re-runs. */
+export function shouldOfferApproveImplement(args: {
+  kind: string;
+  status: string;
+  evalPassed?: boolean;
+  requireFormalApproval: boolean;
+  hasApproval: boolean;
+}): boolean {
+  return (
+    args.kind === "plan" &&
+    args.status !== "failed" &&
+    args.evalPassed !== false &&
+    args.requireFormalApproval &&
+    !args.hasApproval
+  );
+}
+
+export type PrOpenedNotice = {
+  identifier: string;
+  title?: string;
+  linearUrl?: string;
+  prUrl?: string;
+  repo?: string;
+  mention?: string;
+};
+
+/** Slack cue when GitHub opens a PR: review it, then the human merges. */
+export function buildPrOpenedSlackPayload(args: PrOpenedNotice): Record<string, unknown> {
+  const mention = args.mention ?? "";
+  const lines = [
+    `${mention}*PR is open* — Linear is *In Review*.`,
+    args.title ? `*${args.title}*` : null,
+    args.prUrl ? `PR: ${args.prUrl}` : null,
+    args.repo ? `Repo: \`${args.repo}\`` : null,
+    "",
+    "*Next:* open the PR, check BugBot, CI, and the preview, then you merge. That merge moves Linear to *Done*.",
+  ].filter((line) => line !== null);
+
+  const elements: Array<Record<string, unknown>> = [];
+  if (args.prUrl) {
+    elements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Open PR", emoji: true },
+      url: args.prUrl,
+      style: "primary",
+    });
+  }
+  if (args.linearUrl) {
+    elements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Open Linear", emoji: true },
+      url: args.linearUrl,
+    });
+  }
+
+  return {
+    text: `${mention}PR open — review ${args.identifier}, then you merge`,
+    blocks: [
+      {
+        type: "header",
+        text: { type: "plain_text", text: `Review PR · ${args.identifier}`, emoji: true },
+      },
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: lines.join("\n") },
+      },
+      ...(elements.length ? [{ type: "actions", elements }] : []),
+    ],
+  };
+}
+
+export async function notifyPrOpened(args: Omit<PrOpenedNotice, "mention">): Promise<string> {
+  return postSlack(buildPrOpenedSlackPayload({ ...args, mention: slackMention() }));
+}
+
 async function postSlack(payload: Record<string, unknown>): Promise<string> {
   if (!config.slackWebhookUrl) return "skipped";
   const response = await fetch(config.slackWebhookUrl, {
@@ -297,10 +372,13 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
     });
   }
   if (
-    record.kind === "plan" &&
-    record.status !== "failed" &&
-    config.requireFormalApproval &&
-    !approval
+    shouldOfferApproveImplement({
+      kind: record.kind,
+      status: record.status,
+      evalPassed,
+      requireFormalApproval: config.requireFormalApproval,
+      hasApproval: Boolean(approval),
+    })
   ) {
     actionElements.push({
       type: "button",
