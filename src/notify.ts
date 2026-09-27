@@ -474,7 +474,13 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
           evalLine ? `- ${evalLine.replace(/\*/g, "**")}` : "",
           `- Eval dashboard: ${evalsPage}`,
           `- Workflow status: ${statusPage}`,
-          config.requireFormalApproval && record.kind === "plan" && record.status !== "failed"
+          shouldOfferApproveImplement({
+            kind: record.kind,
+            status: record.status,
+            evalPassed,
+            requireFormalApproval: config.requireFormalApproval,
+            hasApproval: Boolean(approval),
+          })
             ? `- Formal write-gate: comment \`/approve\` (or Slack **Approve implement**), then move to **In Review**`
             : "",
           ...(record.prUrls?.length ? ["", "### PRs", ...record.prUrls.map((u) => `- ${u}`)] : []),
