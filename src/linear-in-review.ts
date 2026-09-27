@@ -4,6 +4,7 @@ import {
   postLinearComment,
   resolveInReviewStateIdForIssue,
 } from "./linear-client.js";
+import { notifyPrOpened } from "./notify.js";
 import { armImplementSuppress, clearImplementSuppress } from "./ops.js";
 
 async function linearGql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
@@ -32,6 +33,23 @@ function isInReviewState(stateName: string): boolean {
   return config.implementStates.includes(stateName.trim().toLowerCase());
 }
 
+async function postPrOpenedSlack(
+  issue: { identifier: string; title: string; url?: string },
+  args: { prUrl?: string; repo?: string },
+): Promise<string> {
+  try {
+    return await notifyPrOpened({
+      identifier: issue.identifier,
+      title: issue.title,
+      linearUrl: issue.url,
+      prUrl: args.prUrl,
+      repo: args.repo,
+    });
+  } catch (error) {
+    return `failed:${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
 export async function markIssueInReview(args: {
   identifier: string;
   prUrl?: string;
@@ -42,6 +60,7 @@ export async function markIssueInReview(args: {
   state: string;
   alreadyInReview?: boolean;
   linear?: string;
+  slack?: string;
 }> {
   const issue = await findIssueByIdentifierWithState(args.identifier.toUpperCase());
   if (!issue) {
@@ -50,11 +69,13 @@ export async function markIssueInReview(args: {
 
   if (isInReviewState(issue.stateName)) {
     clearImplementSuppress(issue.identifier);
+    const slack = await postPrOpenedSlack(issue, args);
     return {
       success: true,
       issueId: issue.id,
       state: issue.stateName,
       alreadyInReview: true,
+      slack,
     };
   }
 
@@ -82,11 +103,13 @@ export async function markIssueInReview(args: {
         .join("\n"),
     );
 
+    const slack = await postPrOpenedSlack(issue, args);
     return {
       success: true,
       issueId: issue.id,
       state: "In Review",
       linear: linearComment,
+      slack,
     };
   } catch (error) {
     clearImplementSuppress(issue.identifier);
