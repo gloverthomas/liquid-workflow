@@ -91,6 +91,9 @@ export const config = {
   /** When false, GitHub merge → Linear Done is disabled. */
   githubAutoDoneEnabled:
     (process.env.GITHUB_AUTO_DONE_ENABLED ?? "true").trim().toLowerCase() !== "false",
+  /** When false, GitHub PR opened → Linear In Review is disabled. */
+  githubAutoInReviewEnabled:
+    (process.env.GITHUB_AUTO_IN_REVIEW_ENABLED ?? "true").trim().toLowerCase() !== "false",
   triggerStates: (process.env.TRIGGER_STATES ?? "In Progress")
     .split(",")
     .map((s) => s.trim().toLowerCase())

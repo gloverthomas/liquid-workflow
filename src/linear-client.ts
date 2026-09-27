@@ -40,26 +40,54 @@ function parseIdentifier(identifier: string): { teamId: string; number: number }
   return { teamId: LIQ_TEAM_ID, number: Number.parseInt(match[2]!, 10) };
 }
 
+export type LinearIssueWithState = LinearIssueRef & { stateName: string };
+
 export async function findIssueByIdentifier(identifier: string): Promise<LinearIssueRef | null> {
+  const withState = await findIssueByIdentifierWithState(identifier);
+  if (!withState) return null;
+  const { stateName: _stateName, ...issue } = withState;
+  return issue;
+}
+
+export async function findIssueByIdentifierWithState(
+  identifier: string,
+): Promise<LinearIssueWithState | null> {
   const parsed = parseIdentifier(identifier);
   if (!parsed) return null;
 
   const data = await linearGql<{
-    issues: { nodes: Array<{ id: string; identifier: string; title: string; url: string; description?: string }> };
+    issues: {
+      nodes: Array<{
+        id: string;
+        identifier: string;
+        title: string;
+        url: string;
+        description?: string;
+        state: { name: string };
+      }>;
+    };
   }>(
     `query($teamId: ID!, $number: Float!) {
       issues(
         filter: { team: { id: { eq: $teamId } }, number: { eq: $number } }
         first: 1
       ) {
-        nodes { id identifier title url description }
+        nodes { id identifier title url description state { name } }
       }
     }`,
     { teamId: parsed.teamId, number: parsed.number },
   );
 
   const node = data.issues.nodes[0];
-  return node ?? null;
+  if (!node) return null;
+  return {
+    id: node.id,
+    identifier: node.identifier,
+    title: node.title,
+    url: node.url,
+    description: node.description,
+    stateName: node.state.name,
+  };
 }
 
 export async function createProductSignalIssue(args: {
@@ -113,6 +141,30 @@ export async function createProductSignalIssue(args: {
     throw new Error("linear_issue_create_failed");
   }
   return issue;
+}
+
+export async function resolveInReviewStateIdForIssue(issueUuid: string): Promise<string> {
+  const data = await linearGql<{
+    issue: { team: { states: { nodes: Array<{ id: string; name: string; type: string }> } } };
+  }>(
+    `query($id: String!) {
+      issue(id: $id) {
+        team {
+          states { nodes { id name type } }
+        }
+      }
+    }`,
+    { id: issueUuid },
+  );
+
+  const wanted = config.implementStates;
+  const byName = data.issue.team.states.nodes.find((s) =>
+    wanted.includes(s.name.trim().toLowerCase()),
+  );
+  if (!byName) {
+    throw new Error("No In Review workflow state found on Linear team");
+  }
+  return byName.id;
 }
 
 export async function resolveDoneStateIdForIssue(issueUuid: string): Promise<string> {

@@ -34,11 +34,50 @@ export function extractIssueIdentifier(payload: GitHubPullRequestPayload): strin
   const titleMatch = title.match(ISSUE_RE);
   if (titleMatch) return titleMatch[1]!.toUpperCase();
 
-  const haystack = [payload.pull_request?.body, payload.pull_request?.head?.ref]
-    .filter(Boolean)
-    .join("\n");
-  const match = haystack.match(ISSUE_RE);
-  return match ? match[1]!.toUpperCase() : null;
+  const branch = payload.pull_request?.head?.ref ?? "";
+  const branchMatch = branch.match(ISSUE_RE);
+  if (branchMatch) return branchMatch[1]!.toUpperCase();
+
+  const body = payload.pull_request?.body ?? "";
+  const bodyMatch = body.match(ISSUE_RE);
+  return bodyMatch ? bodyMatch[1]!.toUpperCase() : null;
+}
+
+function resolveCuratedRepo(payload: GitHubPullRequestPayload): string {
+  return (
+    payload.repository?.full_name ??
+    payload.pull_request?.base?.repo?.full_name ??
+    ""
+  ).toLowerCase();
+}
+
+function isCuratedMergeRepo(repo: string): boolean {
+  if (!repo) return false;
+  if (config.githubMergeRepos.length === 0) return true;
+  return config.githubMergeRepos.includes(repo);
+}
+
+export function shouldMoveToInReviewFromPrOpen(payload: GitHubPullRequestPayload): {
+  identifier: string;
+  prUrl?: string;
+  repo?: string;
+} | null {
+  if (payload.action !== "opened") return null;
+  if (payload.pull_request?.base?.ref && payload.pull_request.base.ref !== "main") {
+    return null;
+  }
+
+  const repo = resolveCuratedRepo(payload);
+  if (!isCuratedMergeRepo(repo)) return null;
+
+  const identifier = extractIssueIdentifier(payload);
+  if (!identifier) return null;
+
+  return {
+    identifier,
+    prUrl: payload.pull_request?.html_url,
+    repo: repo || undefined,
+  };
 }
 
 export function shouldCloseFromMerge(payload: GitHubPullRequestPayload): {
@@ -52,14 +91,8 @@ export function shouldCloseFromMerge(payload: GitHubPullRequestPayload): {
     return null;
   }
 
-  const repo = (
-    payload.repository?.full_name ??
-    payload.pull_request.base?.repo?.full_name ??
-    ""
-  ).toLowerCase();
-  if (config.githubMergeRepos.length > 0 && !config.githubMergeRepos.includes(repo)) {
-    return null;
-  }
+  const repo = resolveCuratedRepo(payload);
+  if (!isCuratedMergeRepo(repo)) return null;
 
   const identifier = extractIssueIdentifier(payload);
   if (!identifier) return null;
