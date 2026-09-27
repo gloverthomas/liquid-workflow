@@ -89,6 +89,42 @@ export function shouldOfferApproveImplement(args: {
   );
 }
 
+/** Linear comment follows the same gate as the Slack Approve button. */
+export function linearPlanGuidance(args: {
+  kind: string;
+  status: string;
+  evalPassed?: boolean;
+  requireFormalApproval: boolean;
+  hasApproval: boolean;
+}): { writeGateLine: string; closing: string } {
+  if (args.kind === "implement") {
+    return {
+      writeGateLine: "",
+      closing: "Await human merge after BugBot + CI. Slack is attention, not auto-deploy.",
+    };
+  }
+  if (args.evalPassed === false) {
+    return {
+      writeGateLine:
+        "- Next: re-plan. Move back to **In Progress**. Do not use **Approve implement** on this run.",
+      closing: "Eval failed. Re-plan from **In Progress**. Do not approve implement from this run.",
+    };
+  }
+  if (shouldOfferApproveImplement(args)) {
+    return {
+      writeGateLine:
+        "- Formal write-gate: comment `/approve` (or Slack **Approve implement**), then move to **In Review**",
+      closing:
+        "Await formal approval before implement / PR. Prefer reviewing the agent link over this comment.",
+    };
+  }
+  return {
+    writeGateLine: "",
+    closing:
+      "Await formal approval before implement / PR. Prefer reviewing the agent link over this comment.",
+  };
+}
+
 export type PrOpenedNotice = {
   identifier: string;
   title?: string;
@@ -462,6 +498,14 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
     });
   }
 
+  const linearGuidance = linearPlanGuidance({
+    kind: record.kind,
+    status: record.status,
+    evalPassed,
+    requireFormalApproval: config.requireFormalApproval,
+    hasApproval: Boolean(approval),
+  });
+
   if (linearId) {
     results.linear = await linearComment(
       linearId,
@@ -474,9 +518,7 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
           evalLine ? `- ${evalLine.replace(/\*/g, "**")}` : "",
           `- Eval dashboard: ${evalsPage}`,
           `- Workflow status: ${statusPage}`,
-          config.requireFormalApproval && record.kind === "plan" && record.status !== "failed"
-            ? `- Formal write-gate: comment \`/approve\` (or Slack **Approve implement**), then move to **In Review**`
-            : "",
+          linearGuidance.writeGateLine,
           ...(record.prUrls?.length ? ["", "### PRs", ...record.prUrls.map((u) => `- ${u}`)] : []),
           ...(record.previewUrls?.length ? ["", "### Previews", ...record.previewUrls.map((u) => `- ${u}`)] : []),
           "",
@@ -484,9 +526,7 @@ export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack
           blurb,
           evalChecklistMd ? ["", evalChecklistMd].join("\n") : "",
           "",
-          record.kind === "implement"
-            ? "Await human merge after BugBot + CI. Slack is attention, not auto-deploy."
-            : "Await formal approval before implement / PR. Prefer reviewing the agent link over this comment.",
+          linearGuidance.closing,
         ]
           .filter(Boolean)
           .join("\n"),
