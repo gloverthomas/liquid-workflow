@@ -17,6 +17,7 @@ export const LINEAR_ISSUE_UUID: Record<string, string> = {
   "LIQ-16": "7d93e202-e7ee-4e14-8356-c4c6909d8ae9",
   "LIQ-17": "13058e52-b25d-46fe-a1d8-8587667350ec",
   "LIQ-24": "eff0aee0-f93d-4ecf-9548-6f1ea5a4ea3f",
+  "LIQ-38": "7783c923-1945-400c-9317-c5f8081ed3e1",
 };
 
 function issueLinearUrl(issue: TriggerIssue): string | undefined {
