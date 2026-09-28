@@ -1,3 +1,9 @@
+/*
+  This file moves the ticket to In Review when GitHub says the PR is open, then posts Slack.
+  If the ticket is already In Review, it stays there and Slack still posts. While that move is in flight, the Linear webhook does not start a second implement.
+  Next: Slack says review BugBot, CI, and the preview, then humans merge. This file does not merge.
+*/
+
 import { config } from "./config.js";
 import {
   findIssueByIdentifierWithState,
