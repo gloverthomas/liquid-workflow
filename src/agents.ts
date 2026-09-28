@@ -6,10 +6,12 @@ export type SpecialistBundle = {
   roster: RoleModel[];
 };
 
-/**
- * Named subagents the parent SDK agent can spawn via the Agent/task tool.
- * Each specialist carries its own model selection (Cost vs Intelligence).
- */
+/*
+  Builds the specialist agents the planner or implementer can call.
+  Security reviewer is Intelligence and stays read-only. Quality reviewer is Cost and stays read-only.
+  The planner and implementer roles are resolved here too, then the SDK planner uses them.
+  Does not create the cloud agent and does not open a PR. Next: startPlanRun or startImplementRun.
+*/
 export async function buildSpecialistAgents(): Promise<SpecialistBundle> {
   const [planner, security, quality, implementer] = await Promise.all([
     resolveRoleModel("planner"),

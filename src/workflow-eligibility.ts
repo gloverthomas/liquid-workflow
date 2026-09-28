@@ -7,12 +7,12 @@ export function containsProductSignal(...texts: Array<string | undefined>): bool
   return haystack.includes(PRODUCT_SIGNAL_PHRASE);
 }
 
-/**
- * Linear In Progress / In Review automation runs when:
- * - TRIGGER_ISSUE_IDS is empty → every issue, or
- * - identifier is listed in TRIGGER_ISSUE_IDS, or
- * - title/description contains "product signal".
- */
+/*
+  Says whether this ticket may plan or implement.
+  It runs when TRIGGER_ISSUE_IDS is empty, or the id is listed, or the title or description contains "product signal".
+  It does not run when the id is missing, or when the list is set and the ticket misses both the list and that phrase.
+  Next: In Progress plans. In Review opens the implement path.
+*/
 export function isWorkflowEligible(
   identifier: string,
   title: string,

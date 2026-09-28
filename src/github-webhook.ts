@@ -57,6 +57,11 @@ function isCuratedMergeRepo(repo: string): boolean {
   return config.githubMergeRepos.includes(repo);
 }
 
+/*
+  True when a pull request is opened onto main and the title, branch, or body names the ticket.
+  Does not run for other actions, for a base that is not main, or for a repo outside the curated list.
+  Next: the ticket moves to In Review and Slack posts "PR is open". This does not merge.
+*/
 export function shouldMoveToInReviewFromPrOpen(payload: GitHubPullRequestPayload): {
   identifier: string;
   prUrl?: string;
@@ -80,6 +85,11 @@ export function shouldMoveToInReviewFromPrOpen(payload: GitHubPullRequestPayload
   };
 }
 
+/*
+  True when a human merges a pull request into main and the title, branch, or body names the ticket.
+  A close without a merge does not count. A base that is not main does not count.
+  Next: the ticket moves to Done. Slack does not merge.
+*/
 export function shouldCloseFromMerge(payload: GitHubPullRequestPayload): {
   identifier: string;
   prUrl?: string;

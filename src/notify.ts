@@ -10,6 +10,16 @@ import {
 import { scrubPii } from "./pii.js";
 import { latestValidApproval } from "./write-gate.js";
 
+/*
+  Walkthrough map. Slack posts. Slack does not merge, and it does not start the plan.
+
+  notifySignalReceived — Todo ticket exists. Next is In Progress.
+  notifyPlanComplete — the plan brief. Approve implement only after a green eval. A failed plan says re-plan.
+  notifyPrOpened — PR is open, ticket is In Review, and the human-merge cue. Humans merge.
+
+  The implement brief says review BugBot, CI, and the preview, then you merge.
+*/
+
 /** Curated Linear issue UUIDs — signal comments here; we do not auto-spam new tickets. */
 export const LINEAR_ISSUE_UUID: Record<string, string> = {
   "LIQ-9": "40e7bf03-44bb-4fa0-9226-b3054041a43f",
@@ -72,7 +82,10 @@ function slackMention(): string {
   return id ? `<@${id}> ` : "";
 }
 
-/** Approve is the next action only after a plan that passed eval. A failed plan re-runs. */
+/*
+  Approve implement is offered only for a plan that did not fail, when the eval did not fail, formal approval is still required, and no approval is on file.
+  A failed plan, a failed eval, an implement run, or an approval already on file does not get the button.
+*/
 export function shouldOfferApproveImplement(args: {
   kind: string;
   status: string;
@@ -134,7 +147,10 @@ export type PrOpenedNotice = {
   mention?: string;
 };
 
-/** Slack cue when GitHub opens a PR: review it, then the human merges. */
+/*
+  Slack text when a PR opens: "PR is open", Linear is In Review, then the human-merge cue.
+  The cue says check BugBot, CI, and the preview, then you merge. This message does not merge.
+*/
 export function buildPrOpenedSlackPayload(args: PrOpenedNotice): Record<string, unknown> {
   const mention = args.mention ?? "";
   const lines = [
@@ -275,6 +291,11 @@ export async function notifyBugbotReview(
   return results;
 }
 
+/*
+  Posts when a product signal has created the Todo ticket.
+  Runs only if Slack or Linear credentials are set; otherwise that side is skipped.
+  Does not start the plan. Next line in the message is Linear to In Progress.
+*/
 export async function notifySignalReceived(args: {
   issue: TriggerIssue;
   source?: string;
@@ -357,6 +378,13 @@ export async function notifySignalReceived(args: {
   return results;
 }
 
+/*
+  Posts the plan or implement brief to Slack and as a Linear comment.
+  A plan brief includes the short summary and the eval result.
+  Approve implement is added only after a green eval, and only when Approve is still required.
+  A failed plan says re-plan from In Progress and does not offer Approve implement.
+  An implement brief says you merge after BugBot, CI, and the preview. Slack does not merge.
+*/
 export async function notifyPlanComplete(record: PlanRunRecord): Promise<{ slack?: string; linear?: string }> {
   const results: { slack?: string; linear?: string } = {};
   const kindLabel = record.kind === "implement" ? "Implement" : "Plan";

@@ -53,7 +53,12 @@ function parseIssue(payload: LinearWebhookPayload): TriggerIssue | null {
   };
 }
 
-/** In Progress → plan; In Review → implement (after formal approval). */
+/*
+  Reads a Linear issue update.
+  In Progress returns plan. That is what starts the SDK plan.
+  In Review returns implement. Approve must already be recorded or the implement run stops.
+  Anything else (including a product signal sitting in Todo) returns nothing and does not start an agent.
+*/
 export function routeLinearWebhook(
   payload: LinearWebhookPayload,
 ): { action: LinearWebhookAction; issue: TriggerIssue } | null {
@@ -82,11 +87,11 @@ export function isLinearApproveComment(payload: LinearWebhookPayload): boolean {
   return Boolean(payload.data?.issue?.identifier?.trim());
 }
 
-/**
- * Linear Comment create containing `/approve` → formal write-gate approval.
- * Returns the approval issue identifier when handled.
- * Description counts: signal-created tickets are eligible because the body says "product signal".
- */
+/*
+  A new Linear comment of /approve records Approve and stops.
+  It runs only when the ticket is eligible: listed id, empty TRIGGER_ISSUE_IDS, or the description contains "product signal".
+  It does not start implement. Next: move the ticket to In Review.
+*/
 export function routeLinearCommentApproval(
   payload: LinearWebhookPayload,
 ): { issueId: string; actor: string; approvalId: string } | null {

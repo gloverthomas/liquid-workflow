@@ -27,6 +27,11 @@ async function linearGql<T>(query: string, variables?: Record<string, unknown>):
   return json.data as T;
 }
 
+/*
+  Moves the ticket to Done after a human merge, then posts Slack that the PR merged.
+  Does not run unless the GitHub webhook already decided this was a merge to main.
+  Does not merge anything itself. Slack is the notice after the human click.
+*/
 export async function markIssueDone(args: {
   identifier: string;
   prUrl?: string;

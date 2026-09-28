@@ -50,6 +50,12 @@ async function postPrOpenedSlack(
   }
 }
 
+/*
+  Moves the ticket to In Review when GitHub says the PR is open, then posts Slack.
+  If the ticket is already In Review, it stays there and Slack still posts.
+  The Slack line is "PR is open" plus the human-merge cue. This function does not merge.
+  While the move is in flight, implement from the Linear webhook is suppressed so the status change does not start a second implement.
+*/
 export async function markIssueInReview(args: {
   identifier: string;
   prUrl?: string;

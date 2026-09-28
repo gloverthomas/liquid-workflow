@@ -85,7 +85,11 @@ export function requireFormalApproval(): boolean {
   return config.requireFormalApproval;
 }
 
-/** Returns error message if blocked; undefined if OK. */
+/*
+  Approve unlocks implement. Returns a block message when requireFormalApproval is on and no Approve is on file.
+  Returns nothing (implement may continue) when the switch is off, or when Approve was recorded and has not expired.
+  Recording happens from /approve, a Slack Approve implement click, or a Linear /approve comment.
+*/
 export function formalApprovalBlockReason(issueId: string): string | undefined {
   if (!requireFormalApproval()) return undefined;
   const ok = latestValidApproval(issueId);
