@@ -90,6 +90,12 @@ export async function findIssueByIdentifierWithState(
   };
 }
 
+/*
+  Creates the Linear ticket for a product signal and leaves it in Todo.
+  The description always contains the exact phrase "product signal".
+  When the signal includes a bug writeup (detail), that writeup is appended under the phrase.
+  Does not start a plan. Next: a person moves the ticket to In Progress.
+*/
 export async function createProductSignalIssue(args: {
   title: string;
   source?: string;

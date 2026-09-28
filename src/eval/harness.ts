@@ -31,10 +31,13 @@ function includesAny(text: string, needles: string[]) {
   return needles.some((n) => lower.includes(n.toLowerCase()));
 }
 
-/**
- * Deterministic eval rubric (not an MCP). Gates the human write-gate before implement.
- * Checks the plan/implement artifact text — no model calls.
- */
+/*
+  Deterministic eval. This is not an MCP. It reads the plan or implement text and checks phrases. No model call.
+  If any check fails, this eval fails. The SDK run can still have finished; this score is separate.
+  A failed plan eval means re-plan: move the ticket back to In Progress.
+  A failed plan does not offer Approve implement. That button is decided in the Slack brief from this result.
+  A green plan is what lets Approve unlock implement. This function does not open a PR and does not merge.
+*/
 export function evaluateRun(record: PlanRunRecord): EvalReport {
   const text = `${record.summary ?? ""}\n${record.error ?? ""}`;
   const checks: EvalCheck[] = [];

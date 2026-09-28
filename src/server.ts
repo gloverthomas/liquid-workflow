@@ -43,6 +43,24 @@ import { getRun, hydrateRunsFromDisk, listRuns, startImplementRun, startPlanRun,
 import { escapeHtml, renderStatusPage } from "./status-page.js";
 import type { TriggerIssue } from "./prompts/liq-9.js";
 
+/*
+  Walkthrough map. Open the named spot; the rest of this file is plumbing.
+
+  handleSignal — a product signal creates a Todo ticket and stops. It does not start the plan.
+  /approve — Approve unlocks implement. It does not open a pull request.
+  POST /webhooks/linear — In Progress plans. In Review starts implement, which opens PRs.
+  POST /webhooks/github — a PR opened moves the ticket to In Review and posts Slack.
+    A human merge moves the ticket to Done. Slack does not merge.
+
+  Conditions on this process:
+  workflowEnabled off rejects /signal, Linear, and GitHub.
+  signalEnabled off rejects /signal only. Linear and GitHub can still run.
+  linearAutoEnabled off rejects the Linear webhook. GitHub can still run.
+  githubAutoInReviewEnabled off skips the PR-opened move. githubAutoDoneEnabled off skips Done.
+  dryRun does not stop ticket creation. The SDK planner pretends the agent run.
+  requireFormalApproval on: In Review will not implement until Approve is recorded.
+*/
+
 function readBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -243,6 +261,12 @@ async function handleTrigger(issue: TriggerIssue, res: ServerResponse) {
   sendJson(res, record.status === "failed" ? 500 : 200, { record, notifications });
 }
 
+/*
+  Product signal entry. Creates a Todo ticket and stops.
+  Runs when workflowEnabled and signalEnabled are both on.
+  Does not run when either kill switch is off (the caller gets workflow_disabled).
+  Does not start the plan, even in dry run. Next is a person moving that ticket to In Progress.
+*/
 async function handleSignal(req: IncomingMessage, res: ServerResponse) {
   const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
   cors(res, origin);
@@ -383,6 +407,12 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    /*
+      Approve unlocks implement. Records the formal approval and stops.
+      Does not run without the approve token when one is configured.
+      Does not open a PR and does not start the agent.
+      Next: move the ticket to In Review. That webhook starts implement.
+    */
     if (
       (req.method === "GET" || req.method === "POST") &&
       (url.pathname === "/approve" || url.pathname.startsWith("/approve/"))
@@ -547,6 +577,15 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    /*
+      Linear status webhook.
+      In Progress starts the plan (startPlanRun). A product signal does not reach this step.
+      A Linear comment of /approve records Approve and stops. It does not implement.
+      In Review starts implement (startImplementRun), which opens PRs.
+      Does not run when workflowEnabled or linearAutoEnabled is off.
+      Does not plan or implement a ticket that fails the product-signal eligibility check.
+      requireFormalApproval is enforced inside the implement run, not here.
+    */
     if (req.method === "POST" && url.pathname === "/webhooks/linear") {
       if (!config.workflowEnabled || !config.linearAutoEnabled) {
         log("warn", "linear_webhook_rejected_kill_switch");
@@ -731,6 +770,15 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    /*
+      GitHub webhook. Slack does not merge, and this route does not merge.
+      A PR opened on main, naming the ticket, moves Linear to In Review and posts Slack.
+      That post still happens if the ticket is already In Review.
+      A human merge on main moves the ticket to Done.
+      A closed-without-merge PR does not move the ticket.
+      Does not run when workflowEnabled is off.
+      The In Review move also needs githubAutoInReviewEnabled. Done needs githubAutoDoneEnabled.
+    */
     if (req.method === "POST" && url.pathname === "/webhooks/github") {
       if (!config.workflowEnabled) {
         log("warn", "github_webhook_rejected_kill_switch");

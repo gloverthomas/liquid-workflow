@@ -35,6 +35,18 @@ export type PlanRunRecord = {
   eval?: EvalReport;
 };
 
+/*
+  Walkthrough map. One harness key, CURSOR_API_KEY, creates every agent.
+
+  startPlanRun — In Progress. Plan mode. autoCreatePR is false, so a plan does not open a PR.
+  startImplementRun — after Approve, when the ticket moves to In Review. autoCreatePR is true, so implement opens PRs.
+  Humans merge. This file does not merge.
+
+  Model roles live in models.ts: planner Intelligence, security Intelligence, quality Cost, implementer Balance.
+  Fallback model is composer when the router is unavailable.
+  dryRun writes a pretend summary and does not call the agent. A dry run still gets an eval.
+*/
+
 const runs = new Map<string, PlanRunRecord>();
 
 function newRunId() {
@@ -161,6 +173,12 @@ function attachEval(record: PlanRunRecord) {
   return record;
 }
 
+/*
+  Starts the plan after the ticket moves to In Progress.
+  Runs for real only when dryRun is off and CURSOR_API_KEY is set. Otherwise it writes a dry-run summary and stops.
+  Creates one cloud agent in plan mode with autoCreatePR false. A plan does not open a PR.
+  Next: the eval harness scores the plan text. Slack posts the brief. Approve implement appears only after a green eval.
+*/
 export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> {
   const runId = newRunId();
   const specialists = await buildSpecialistAgents();
@@ -281,7 +299,13 @@ export async function startPlanRun(issue: TriggerIssue): Promise<PlanRunRecord> 
   }
 }
 
-/** Human write-gate passed: implement bounded fix and open PRs. */
+/*
+  Starts implement after Approve, when the ticket is In Review.
+  Does not run without a recorded Approve when requireFormalApproval is on.
+  Does not run when the eval gate is on and the latest plan eval is missing or failed. A failed plan does not get a PR.
+  Does not call the agent in dryRun; it writes a pretend summary that still says humans merge.
+  When it runs for real, autoCreatePR is true, so the agent opens PRs. Humans merge.
+*/
 export async function startImplementRun(
   issue: TriggerIssue,
   options: { bypassEval?: boolean; bypassWriteGate?: boolean; bypassCiGate?: boolean } = {},
