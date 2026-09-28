@@ -1,3 +1,9 @@
+/*
+  This file starts the cloud agent. One harness key, CURSOR_API_KEY, creates every agent.
+  In Progress starts the plan, in plan mode, with autoCreatePR false, so a plan does not open a PR. After Approve, In Review starts implement with autoCreatePR true, so implement opens PRs. dryRun writes a pretend summary and does not call the agent. A dry run still gets an eval. Planner is Intelligence, security reviewer is Intelligence, quality reviewer is Cost, implementer is Balance. Fallback is composer when the router is unavailable.
+  Next: the eval scores the text, then Slack posts the brief. Humans merge. This file does not merge.
+*/
+
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Agent } from "@cursor/sdk";
@@ -34,18 +40,6 @@ export type PlanRunRecord = {
   modelRoster?: string;
   eval?: EvalReport;
 };
-
-/*
-  Walkthrough map. One harness key, CURSOR_API_KEY, creates every agent.
-
-  startPlanRun — In Progress. Plan mode. autoCreatePR is false, so a plan does not open a PR.
-  startImplementRun — after Approve, when the ticket moves to In Review. autoCreatePR is true, so implement opens PRs.
-  Humans merge. This file does not merge.
-
-  Model roles live in models.ts: planner Intelligence, security Intelligence, quality Cost, implementer Balance.
-  Fallback model is composer when the router is unavailable.
-  dryRun writes a pretend summary and does not call the agent. A dry run still gets an eval.
-*/
 
 const runs = new Map<string, PlanRunRecord>();
 

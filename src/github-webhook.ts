@@ -1,3 +1,9 @@
+/*
+  This file reads a GitHub pull request and decides whether the ticket should move.
+  An opened PR onto main counts when the title, branch, or body names the ticket, and the repo is on the curated list. A human merge onto main counts the same way. A close without a merge does not. A base that is not main does not. A missing webhook secret or a bad signature is refused.
+  Next: an open moves the ticket to In Review and Slack posts that the PR is open. A merge moves the ticket to Done. Humans merge. This file does not merge.
+*/
+
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { config } from "./config.js";
 

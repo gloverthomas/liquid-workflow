@@ -1,3 +1,9 @@
+/*
+  This file talks to Linear for the workflow.
+  The product signal creates a Todo ticket here. The description always contains the phrase "product signal", and the bug writeup is appended when the signal includes one. It does not start the plan. Later steps use this file to look the ticket up, post a comment, or resolve In Review and Done.
+  Next: the new ticket stays in Todo until a person moves it to In Progress.
+*/
+
 import { config } from "./config.js";
 
 const LIQ_TEAM_ID = "5389dda4-1725-4096-9ecb-a24a378b28c6";

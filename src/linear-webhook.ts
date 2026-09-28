@@ -1,3 +1,9 @@
+/*
+  This file reads a Linear update and decides whether to plan or implement.
+  In Progress returns plan. In Review returns implement. A product signal sitting in Todo returns nothing and does not start an agent. A new /approve comment records Approve and stops. It does not start implement. An ineligible ticket is ignored.
+  Next: In Progress starts the plan. Approve unlocks implement. Moving the ticket to In Review opens PRs.
+*/
+
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { TriggerIssue } from "./prompts/liq-9.js";
 import { config } from "./config.js";

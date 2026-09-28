@@ -1,3 +1,9 @@
+/*
+  This file moves the ticket to Done after a human merge, then posts Slack that the PR merged.
+  It runs only when the GitHub webhook already decided this was a merge onto main. It does not merge anything itself.
+  Next: Slack is the notice after that human click.
+*/
+
 import { config } from "./config.js";
 import {
   findIssueByIdentifier,
