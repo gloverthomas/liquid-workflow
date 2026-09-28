@@ -1,3 +1,9 @@
+/*
+  This file says whether a ticket may plan or implement.
+  It allows the ticket when TRIGGER_ISSUE_IDS is empty, or the id is listed, or the title or description contains "product signal". It refuses a missing id, and it refuses a ticket that misses both the list and that phrase.
+  Next: In Progress plans. In Review opens PRs after Approve unlocks implement.
+*/
+
 import { config } from "./config.js";
 
 export const PRODUCT_SIGNAL_PHRASE = "product signal";

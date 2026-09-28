@@ -1,3 +1,9 @@
+/*
+  This file posts to Slack and Linear. Slack does not merge, and it does not start the plan.
+  A product signal posts that the Todo ticket exists. The plan brief offers Approve implement only after a green eval. A failed plan says re-plan and does not offer that button. When a PR opens, Slack says the ticket is In Review.
+  Next: a person moves the ticket to In Progress, and that starts the plan. Approve unlocks implement. In Review opens PRs. Humans merge after BugBot, CI, and the preview.
+*/
+
 import { config } from "./config.js";
 import type { PlanRunRecord } from "./sdk-planner.js";
 import type { TriggerIssue } from "./prompts/liq-9.js";
@@ -9,16 +15,6 @@ import {
 } from "./bugbot-links.js";
 import { scrubPii } from "./pii.js";
 import { latestValidApproval } from "./write-gate.js";
-
-/*
-  Walkthrough map. Slack posts. Slack does not merge, and it does not start the plan.
-
-  notifySignalReceived — Todo ticket exists. Next is In Progress.
-  notifyPlanComplete — the plan brief. Approve implement only after a green eval. A failed plan says re-plan.
-  notifyPrOpened — PR is open, ticket is In Review, and the human-merge cue. Humans merge.
-
-  The implement brief says review BugBot, CI, and the preview, then you merge.
-*/
 
 /** Curated Linear issue UUIDs — signal comments here; we do not auto-spam new tickets. */
 export const LINEAR_ISSUE_UUID: Record<string, string> = {

@@ -1,3 +1,9 @@
+/*
+  This file scores a finished plan or implement run by checking phrases in the text. It does not call a model.
+  If any check fails, the eval fails. The agent run can still have finished. A failed plan does not offer Approve implement. A green plan is what lets Approve unlock implement.
+  Next: Slack posts the brief from this score. A failed plan means re-plan from In Progress. This file does not open a PR. Humans merge.
+*/
+
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { isHeroIssue } from "../hero-issues.js";

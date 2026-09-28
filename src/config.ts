@@ -1,3 +1,9 @@
+/*
+  This file loads the switches the workflow reads.
+  dryRun is on when DRY_RUN is true, or when DRY_RUN is unset and CURSOR_API_KEY is empty. The SDK planner then pretends the run. workflowEnabled is the master kill switch. signalEnabled gates the product signal only. linearAutoEnabled gates In Progress plans and In Review implement. githubAutoInReviewEnabled gates a PR opened to In Review. githubAutoDoneEnabled gates a human merge to Done. requireFormalApproval on means Approve unlocks implement. Off means In Review can implement without that click.
+  Next: the server and the SDK planner use these switches. One harness key: CURSOR_API_KEY.
+*/
+
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -42,15 +48,6 @@ const dryRun =
   explicitDryRun === "true" ||
   (explicitDryRun !== "false" && cursorApiKey.length === 0);
 
-/*
-  Switches the walkthrough reads. Defaults shown are the current defaults.
-  dryRun is on when DRY_RUN is true, or when DRY_RUN is unset and CURSOR_API_KEY is empty. The SDK planner then pretends the run.
-  workflowEnabled is the master kill switch. signalEnabled gates the product signal only.
-  linearAutoEnabled gates In Progress plans and In Review implement.
-  githubAutoInReviewEnabled gates PR-opened to In Review. githubAutoDoneEnabled gates merge to Done.
-  requireFormalApproval on means Approve unlocks implement. Off means In Review can implement without that click.
-  One harness key: CURSOR_API_KEY. The fallback model name is CURSOR_MODEL, otherwise composer-2.5.
-*/
 export const config = {
   host: process.env.HOST ?? "127.0.0.1",
   port: Number.parseInt(process.env.PORT ?? "4100", 10),

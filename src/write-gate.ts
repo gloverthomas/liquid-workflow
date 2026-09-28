@@ -1,3 +1,9 @@
+/*
+  This file records Approve and blocks implement until that Approve is on file.
+  Approve unlocks implement when requireFormalApproval is on and the Approve has not expired. When that switch is off, implement may continue without the click. Approve is recorded from /approve, a Slack Approve implement click, or a Linear /approve comment. Recording Approve does not open a PR.
+  Next: a person moves the ticket to In Review, and that opens PRs.
+*/
+
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "./config.js";

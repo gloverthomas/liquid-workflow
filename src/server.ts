@@ -1,3 +1,9 @@
+/*
+  This server takes the product signal, Linear updates, and GitHub events.
+  A product signal creates a Todo ticket and stops. It does not start the plan. It runs only when workflowEnabled and signalEnabled are both on. workflowEnabled off also rejects Linear and GitHub. signalEnabled off rejects the product signal only. linearAutoEnabled off rejects the Linear webhook. A PR opened moves the ticket to In Review only when githubAutoInReviewEnabled is on. A human merge moves it to Done only when githubAutoDoneEnabled is on. dryRun still creates the ticket. requireFormalApproval on means In Review does not implement until Approve is recorded.
+  Next: a person moves that ticket to In Progress, and that starts the plan. Approve unlocks implement. In Review opens PRs. Humans merge. Slack does not merge.
+*/
+
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { checkApiAccess, checkApproveAccess, routeAccess } from "./access.js";
 import { buildSpecialistAgents } from "./agents.js";
@@ -42,24 +48,6 @@ import { checkMainCiGreen } from "./github-checks.js";
 import { getRun, hydrateRunsFromDisk, listRuns, startImplementRun, startPlanRun, summarizeRun } from "./sdk-planner.js";
 import { escapeHtml, renderStatusPage } from "./status-page.js";
 import type { TriggerIssue } from "./prompts/liq-9.js";
-
-/*
-  Walkthrough map. Open the named spot; the rest of this file is plumbing.
-
-  handleSignal — a product signal creates a Todo ticket and stops. It does not start the plan.
-  /approve — Approve unlocks implement. It does not open a pull request.
-  POST /webhooks/linear — In Progress plans. In Review starts implement, which opens PRs.
-  POST /webhooks/github — a PR opened moves the ticket to In Review and posts Slack.
-    A human merge moves the ticket to Done. Slack does not merge.
-
-  Conditions on this process:
-  workflowEnabled off rejects /signal, Linear, and GitHub.
-  signalEnabled off rejects /signal only. Linear and GitHub can still run.
-  linearAutoEnabled off rejects the Linear webhook. GitHub can still run.
-  githubAutoInReviewEnabled off skips the PR-opened move. githubAutoDoneEnabled off skips Done.
-  dryRun does not stop ticket creation. The SDK planner pretends the agent run.
-  requireFormalApproval on: In Review will not implement until Approve is recorded.
-*/
 
 function readBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {

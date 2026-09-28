@@ -1,3 +1,9 @@
+/*
+  This file builds the specialist agents the plan or implement run can call.
+  Security reviewer is Intelligence and stays read-only. Quality reviewer is Cost and stays read-only. It does not create the cloud agent and does not open a PR.
+  Next: the SDK planner starts the plan on In Progress, or implement after Approve when the ticket is In Review.
+*/
+
 import type { AgentDefinition, ModelSelection } from "@cursor/sdk";
 import { resolveRoleModel, type RoleModel } from "./models.js";
 

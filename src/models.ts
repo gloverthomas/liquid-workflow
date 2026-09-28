@@ -1,12 +1,12 @@
+/*
+  This file picks the model for each role. The harness key is applied in the SDK planner, not here.
+  Planner is Intelligence. Security reviewer is Intelligence. Quality reviewer is Cost. Implementer is Balance. An env override for a role wins first and skips the router. If the router cannot take that role, the fallback is composer (CURSOR_MODEL, otherwise composer-2.5).
+  Next: the SDK planner uses these roles when In Progress plans and when In Review opens PRs.
+*/
+
 import { Cursor, type ModelSelection } from "@cursor/sdk";
 import { config } from "./config.js";
 
-/*
-  Model roles for the one harness key (CURSOR_API_KEY is applied in the SDK planner, not here).
-  Planner is Intelligence. Security reviewer is Intelligence. Quality reviewer is Cost. Implementer is Balance.
-  If the Cursor router cannot take that role, the fallback is composer (CURSOR_MODEL, otherwise composer-2.5).
-  An env override for a role wins first and skips the router.
-*/
 /** Product labels reviewers understand. SDK wire values differ for Balance. */
 export type OptimizeFor = "cost" | "balanced" | "intelligence";
 
